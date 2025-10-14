@@ -1,0 +1,91 @@
+# Intelligent Village - Git Ignore File
+
+# Node.js Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Databases (keep structure, ignore data)
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.duckdb
+*.duckdb.wal
+
+# ML Models (large binary files)
+ml_models/*.json
+ml_models/*.bin
+ml_models/*.h5
+ml_models/*.onnx
+
+# Logs
+*.log
+logs/
+
+# Transformers.js Cache
+node_modules/@huggingface/transformers/.cache/
+
+# OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+nul
+
+# IDE / Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# Backup Files
+*.backup
+*.bak
+*.old
+*.tmp
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# Test Coverage
+coverage/
+.nyc_output/
+
+# Temporary Files
+tmp/
+temp/
+.cache/
+
+# Windows Specific
+$RECYCLE.BIN/
+*.lnk
+
+# Python (if any scripts remain)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST

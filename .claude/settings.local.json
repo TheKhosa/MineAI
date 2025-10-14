@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(where node)",
+      "Bash(npm install:*)",
+      "Bash(node minecraft_bot.js)",
+      "Bash(npm update:*)",
+      "Bash(node minecraft_smart_bot.js)",
+      "Bash(node minecraft_progression_bot.js)",
+      "Bash(node:*)",
+      "Bash(timeout 70 tail -f /dev/null)",
+      "Bash(timeout 30 tail -f /dev/null)",
+      "Bash(dir:*)",
+      "Bash(timeout 30 node:*)",
+      "Bash(taskkill:*)",
+      "Bash(timeout 45 tail -f /dev/null)",
+      "Bash(timeout 10 tail -f /dev/null)",
+      "Bash(nodemon intelligent_village.js)",
+      "Bash(powershell:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(timeout 5 tail -f /dev/null)",
+      "Bash(del AIKnowledge.sqlite)",
+      "Bash(npx nodemon:*)",
+      "Bash(copy agent_memory_system.js agent_memory_system.js.duckdb.backup)",
+      "WebSearch",
+      "Bash(where:*)",
+      "Bash(winget install:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
