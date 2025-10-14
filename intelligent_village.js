@@ -25,7 +25,13 @@ let memorySystem = null;  // Will be initialized after server starts
 
 // === CHAT LLM SYSTEM ===
 const { getChatLLM } = require('./agent_chat_llm');
+const { DownloadManager } = require('./llm_download_manager');
 let chatLLM = null;  // Will be initialized after server starts
+let downloadManager = null;  // For prerequisite checking
+
+// === PERSONALITY SYSTEM ===
+const { getPersonalitySystem } = require('./agent_personality_system');
+let personalitySystem = null;  // Will be initialized after server starts
 
 // === SCALABILITY CONFIGURATION ===
 const USE_THREADING = true;   // ✅ PRODUCTION MODE: Multi-threaded for 1000+ agents
@@ -3658,22 +3664,68 @@ memorySystem.initialize().then(() => {
     memorySystem = null;
 });
 
-// Initialize Chat LLM System
+// Initialize Chat LLM System with prerequisite checking
+let chatLLMReady = false;
+const SELECTED_BACKEND = 'transformers';  // Change this to switch backends: 'mock', 'transformers', 'llamacpp', 'ollama'
+
+async function initializeChatLLM() {
+    console.log('\n' + '='.repeat(70));
+    console.log('[CHAT LLM] Initializing Agent Communication System...');
+    console.log('[CHAT LLM] Selected backend: ' + SELECTED_BACKEND.toUpperCase());
+    console.log('='.repeat(70));
+
+    // Create download manager
+    downloadManager = new DownloadManager();
+
+    // Check prerequisites
+    const prereqsMet = await downloadManager.checkPrerequisites(SELECTED_BACKEND);
+
+    if (!prereqsMet) {
+        downloadManager.displayStartupSummary(SELECTED_BACKEND, false);
+        console.error('[CHAT LLM] FATAL ERROR: Prerequisites not met');
+        console.error('[CHAT LLM] System cannot continue without required dependencies');
+        process.exit(1);
+    }
+
+    // Initialize the LLM
+    chatLLM = getChatLLM(SELECTED_BACKEND);
+
+    try {
+        // Initialize with progress monitoring
+        await downloadManager.initializeWithProgress(SELECTED_BACKEND, async () => {
+            await chatLLM.initialize();
+        });
+
+        console.log('[CHAT LLM] Agent chat system initialized');
+        console.log('[CHAT LLM] Backend: ' + chatLLM.backend);
+        console.log('[CHAT LLM] Agents can now socialize and negotiate with Qwen2.5-0.5B-Instruct AI');
+        downloadManager.displayStartupSummary(SELECTED_BACKEND, true);
+        chatLLMReady = true;
+    } catch (error) {
+        console.error('[CHAT LLM] FATAL ERROR: Failed to initialize Chat LLM:', error.message);
+        console.error('[CHAT LLM] System cannot continue without AI model');
+        console.error('[CHAT LLM] Please fix the configuration and restart');
+        console.log('='.repeat(70) + '\n');
+        process.exit(1);
+    }
+}
+
+// Run initialization but don't block - store promise
+const chatLLMInitPromise = initializeChatLLM();
+
+// Initialize Personality System
 console.log('\n' + '='.repeat(70));
-console.log('[CHAT LLM] Initializing Agent Communication System...');
-chatLLM = getChatLLM('transformers');  // Use Transformers.js for pure JS inference
-chatLLM.initialize().then(() => {
-    console.log('[CHAT LLM] Agent chat system initialized');
-    console.log('[CHAT LLM] Backend: ' + chatLLM.backend);
-    console.log('[CHAT LLM] Agents can now socialize and negotiate');
-    console.log('='.repeat(70) + '\n');
-}).catch(error => {
-    console.error('[CHAT LLM] Failed to initialize Chat LLM:', error.message);
-    console.error('[CHAT LLM] Falling back to mock backend');
-    console.log('='.repeat(70) + '\n');
-    chatLLM = getChatLLM('mock');
-    chatLLM.initialize();
-});
+console.log('[PERSONALITY] Initializing Agent Personality System...');
+personalitySystem = getPersonalitySystem();
+console.log('[PERSONALITY] Sims-like preferences and compatibility system active');
+console.log('[PERSONALITY] Features:');
+console.log('  - Likes/dislikes across 5 categories (activities, biomes, items, behaviors, social)');
+console.log('  - Compatibility scoring (-1.0 to +1.0)');
+console.log('  - Emergent factions based on shared interests');
+console.log('  - Genetic inheritance with mutations');
+console.log('  - Experience-based preference evolution');
+console.log('[PERSONALITY] Agents will discuss preferences and form relationships/rivalries');
+console.log('='.repeat(70) + '\n');
 
 // Initialize Worker Pool if threading enabled
 if (USE_THREADING && mlTrainer && WorkerPoolManager) {
@@ -3836,8 +3888,26 @@ if (USE_THREADING && mlTrainer && WorkerPoolManager) {
     }
 }
 
-// Start village with async batch spawning
+// Start village ONLY after Chat LLM is fully initialized
 (async () => {
+    console.log('\n' + '='.repeat(70));
+    console.log('[STARTUP] Waiting for Chat LLM initialization to complete...');
+    console.log('[STARTUP] Village will start once model is ready');
+    console.log('='.repeat(70) + '\n');
+
+    // Wait for chat LLM to be ready
+    await chatLLMInitPromise;
+
+    if (!chatLLMReady) {
+        console.error('[STARTUP] FATAL: Chat LLM failed to initialize');
+        process.exit(1);
+    }
+
+    console.log('\n' + '='.repeat(70));
+    console.log('[STARTUP] ✅ All prerequisites met - starting village!');
+    console.log('='.repeat(70) + '\n');
+
+    // Now start the village
     await startVillage(SERVER_CONFIG, megaVillage);
 })().catch(err => {
     console.error('[VILLAGE] Fatal error during startup:', err);

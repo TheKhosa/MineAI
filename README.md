@@ -205,6 +205,7 @@ start.bat
 ## 📖 Documentation
 
 - **[HOWTO.md](HOWTO.md)** - Detailed setup, configuration, and usage guide
+- **[LLM_SETUP.md](LLM_SETUP.md)** - Agent chat LLM configuration (Transformers.js, node-llama-cpp, etc.)
 - **[SCALABILITY_GUIDE.md](SCALABILITY_GUIDE.md)** - Multi-threading and scaling to 1000+ agents
 - **[ML_README.md](ML_README.md)** - Machine learning architecture deep dive
 - **[DASHBOARD_README.md](DASHBOARD_README.md)** - Dashboard features and customization

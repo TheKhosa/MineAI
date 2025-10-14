@@ -27,7 +27,8 @@
       "Bash(copy agent_memory_system.js agent_memory_system.js.duckdb.backup)",
       "WebSearch",
       "Bash(where:*)",
-      "Bash(winget install:*)"
+      "Bash(winget install:*)",
+      "Bash(timeout 60 tail -f /dev/null)"
     ],
     "deny": [],
     "ask": []

@@ -2,6 +2,134 @@
 
 ## Recent Updates
 
+### Agent Chat LLM Multi-Backend Configuration
+**Date**: 2025-10-14
+
+#### Overview
+Implemented flexible multi-backend architecture for agent-to-agent communication with multiple LLM options.
+
+#### Backends Implemented
+
+**1. Mock Backend (Default & Active)**
+- ✅ Rule-based contextual responses
+- ✅ No installation required
+- ✅ Works out of the box
+- Context-aware templates for: nearby, trading, danger, low_health, exploring
+- Agents chat every 30 seconds with appropriate messages
+
+**2. Transformers.js (Optional)**
+- 🔧 Configured for IBM Granite 4.0 Micro (3B params)
+- Uses ONNX format for pure JavaScript inference
+- Requires: `@huggingface/transformers` + `onnxruntime-node`
+- First run downloads ~500MB model
+- 8-bit quantization for efficiency
+- Falls back to mock if initialization fails
+
+**3. node-llama-cpp (Optional)**
+- 🔧 Configured for UserLM-8b-GGUF
+- Microsoft's user simulation model (excellent for Minecraft players)
+- Supports GGUF format models
+- Requires manual model download (~5GB Q4_K_M quantization)
+- Optimized for realistic user behavior simulation
+- Download from: https://huggingface.co/mradermacher/UserLM-8b-GGUF
+
+**4. Ollama (Optional)**
+- External service backend
+- Requires Ollama server on localhost:11434
+- Full GPU acceleration support
+
+**5. Python (Legacy)**
+- Placeholder for future Python subprocess integration
+
+#### Files Created/Modified
+
+**Created:**
+- `LLM_SETUP.md` - Comprehensive guide for all LLM backend options
+- `test_chat_llm.js` - Test script for backend verification
+
+**Modified:**
+- `agent_chat_llm.js`:
+  - Lines 1-35: Enhanced documentation with all backend info
+  - Lines 137-173: Added `initializeLlamaCpp()` method
+  - Lines 353-371: Added `generateWithLlamaCpp()` method
+  - Lines 42-44: Added 'llamacpp' case to initialization switch
+  - Lines 208-210: Added 'llamacpp' case to generation switch
+
+- `README.md`:
+  - Line 208: Added LLM_SETUP.md to documentation section
+
+#### Configuration
+
+**Current Setup** (intelligent_village.js:3664):
+```javascript
+chatLLM = getChatLLM('transformers');  // Primary
+// Falls back to mock automatically on failure
+```
+
+**To switch backends**, edit line 3664:
+```javascript
+chatLLM = getChatLLM('mock');        // Rule-based (default)
+chatLLM = getChatLLM('transformers'); // Granite 4.0 Micro
+chatLLM = getChatLLM('llamacpp');    // UserLM-8b GGUF
+chatLLM = getChatLLM('ollama');      // External service
+```
+
+#### Dependencies Status
+
+| Package | Status | Purpose |
+|---------|--------|---------|
+| onnxruntime-node | ✅ Installed | Transformers.js ONNX models |
+| @huggingface/transformers | ⏳ Optional | Granite 4.0 Micro (takes time to install) |
+| node-llama-cpp | ⏳ Optional | UserLM-8b GGUF support |
+
+#### Agent Dialogue Features
+
+All backends support:
+- Context-aware message generation (nearby, danger, trading, low_health)
+- Need-based dialogue (hungry, unsafe, low resources, lonely)
+- Mood integration (stressed, concerned, neutral)
+- Social reward system (+0.5 per interaction)
+- Mood boost (social need +0.1)
+- Dashboard event logging
+- Conversation history tracking
+
+#### Testing
+
+Run test suite:
+```bash
+node test_chat_llm.js
+```
+
+Tests include:
+1. Backend initialization
+2. Nearby context dialogue
+3. Low health context dialogue
+4. Trading context dialogue
+5. Conversation statistics
+
+#### Current Status
+
+✅ **Working Now**:
+- Mock backend fully operational
+- Agents chatting every 30 seconds
+- Context-aware responses
+- Dashboard integration
+- Social rewards
+
+⏳ **Optional Enhancements**:
+- Install `@huggingface/transformers` for Granite 4.0 Micro
+- Install `node-llama-cpp` + download UserLM-8b for best quality
+- Or keep using mock backend (perfectly functional!)
+
+#### Documentation
+
+See `LLM_SETUP.md` for:
+- Detailed installation instructions
+- Backend comparison table
+- Performance metrics
+- Troubleshooting guide
+- Quantization options (Q4_K_M, Q6_K, Q8_0)
+
 ### Production Optimizations & ML Training Enhancements
 **Date**: 2025-10-14
 

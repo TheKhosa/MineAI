@@ -126,6 +126,32 @@ class AgentMemorySystem {
                             deepest_y INTEGER DEFAULT 64
                         );
 
+                        -- Preference Discussions: Track conversations about likes/dislikes
+                        CREATE TABLE IF NOT EXISTS preference_discussions (
+                            discussion_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            agent_uuid TEXT NOT NULL,
+                            other_agent_uuid TEXT NOT NULL,
+                            timestamp DATETIME DEFAULT (datetime('now')),
+                            topic_category TEXT NOT NULL,
+                            topic_item TEXT NOT NULL,
+                            agent_sentiment TEXT NOT NULL,
+                            other_sentiment TEXT,
+                            compatibility_impact REAL,
+                            conversation_text TEXT
+                        );
+
+                        -- Personality Snapshots: Store agent personalities for lineage tracking
+                        CREATE TABLE IF NOT EXISTS personality_snapshots (
+                            snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            agent_uuid TEXT NOT NULL,
+                            agent_name TEXT NOT NULL,
+                            generation INTEGER NOT NULL,
+                            timestamp DATETIME DEFAULT (datetime('now')),
+                            personality_json TEXT NOT NULL,
+                            parent_uuid TEXT,
+                            mutation_rate REAL
+                        );
+
                         -- Create indexes for performance
                         CREATE INDEX IF NOT EXISTS idx_episodic_agent ON episodic_memories(agent_uuid);
                         CREATE INDEX IF NOT EXISTS idx_episodic_type ON episodic_memories(event_type);
@@ -133,6 +159,9 @@ class AgentMemorySystem {
                         CREATE INDEX IF NOT EXISTS idx_social_agent ON social_relationships(agent_uuid);
                         CREATE INDEX IF NOT EXISTS idx_emotional_agent ON emotional_history(agent_uuid);
                         CREATE INDEX IF NOT EXISTS idx_location_agent ON location_memories(agent_uuid);
+                        CREATE INDEX IF NOT EXISTS idx_preference_agent ON preference_discussions(agent_uuid);
+                        CREATE INDEX IF NOT EXISTS idx_preference_topic ON preference_discussions(topic_category);
+                        CREATE INDEX IF NOT EXISTS idx_personality_agent ON personality_snapshots(agent_uuid);
                     `;
 
                     this.db.exec(createTables, (err) => {
@@ -448,6 +477,190 @@ class AgentMemorySystem {
                 }
             });
         });
+    }
+
+    /**
+     * Store a preference discussion between two agents
+     */
+    async storePreferenceDiscussion(agentUUID, otherAgentUUID, topic, agentSentiment, otherSentiment, compatibilityImpact, conversationText = '') {
+        if (!this.initialized) await this.initialize();
+
+        if (!agentUUID || !otherAgentUUID || !topic || !agentSentiment) {
+            return Promise.resolve();
+        }
+
+        return new Promise((resolve, reject) => {
+            const query = `
+                INSERT INTO preference_discussions (
+                    agent_uuid, other_agent_uuid, topic_category, topic_item,
+                    agent_sentiment, other_sentiment, compatibility_impact, conversation_text
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `;
+
+            this.db.run(query, [
+                agentUUID,
+                otherAgentUUID,
+                topic.category || 'general',
+                topic.item || 'unknown',
+                agentSentiment,
+                otherSentiment || 'unknown',
+                compatibilityImpact ?? 0,
+                conversationText
+            ], (err) => {
+                if (err) {
+                    console.error('[MEMORY] Failed to store preference discussion:', err.message);
+                    resolve();
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    /**
+     * Get recent preference discussions for compatibility analysis
+     */
+    async getPreferenceDiscussions(agentUUID, otherAgentUUID = null, limit = 10) {
+        if (!this.initialized) await this.initialize();
+
+        if (!agentUUID) {
+            return Promise.resolve([]);
+        }
+
+        return new Promise((resolve, reject) => {
+            let query, params;
+
+            if (otherAgentUUID) {
+                // Get discussions between specific agents
+                query = `
+                    SELECT * FROM preference_discussions
+                    WHERE (agent_uuid = ? AND other_agent_uuid = ?)
+                       OR (agent_uuid = ? AND other_agent_uuid = ?)
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                `;
+                params = [agentUUID, otherAgentUUID, otherAgentUUID, agentUUID, limit];
+            } else {
+                // Get all discussions for this agent
+                query = `
+                    SELECT * FROM preference_discussions
+                    WHERE agent_uuid = ?
+                    ORDER BY timestamp DESC
+                    LIMIT ?
+                `;
+                params = [agentUUID, limit];
+            }
+
+            this.db.all(query, params, (err, rows) => {
+                if (err) {
+                    console.error('[MEMORY] Failed to retrieve preference discussions:', err.message);
+                    resolve([]);
+                } else {
+                    resolve(rows || []);
+                }
+            });
+        });
+    }
+
+    /**
+     * Save personality snapshot (for genetic lineage tracking)
+     */
+    async savePersonalitySnapshot(agentUUID, agentName, generation, personality, parentUUID = null, mutationRate = 0) {
+        if (!this.initialized) await this.initialize();
+
+        if (!agentUUID || !agentName || !personality) {
+            return Promise.resolve();
+        }
+
+        return new Promise((resolve, reject) => {
+            const query = `
+                INSERT INTO personality_snapshots (
+                    agent_uuid, agent_name, generation, personality_json, parent_uuid, mutation_rate
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            `;
+
+            this.db.run(query, [
+                agentUUID,
+                agentName,
+                generation,
+                JSON.stringify(personality),
+                parentUUID,
+                mutationRate
+            ], (err) => {
+                if (err) {
+                    console.error('[MEMORY] Failed to save personality snapshot:', err.message);
+                    resolve();
+                } else {
+                    resolve();
+                }
+            });
+        });
+    }
+
+    /**
+     * Get personality snapshot for an agent
+     */
+    async getPersonalitySnapshot(agentUUID) {
+        if (!this.initialized) await this.initialize();
+
+        if (!agentUUID) {
+            return Promise.resolve(null);
+        }
+
+        return new Promise((resolve, reject) => {
+            const query = `
+                SELECT * FROM personality_snapshots
+                WHERE agent_uuid = ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+            `;
+
+            this.db.get(query, [agentUUID], (err, row) => {
+                if (err) {
+                    console.error('[MEMORY] Failed to retrieve personality snapshot:', err.message);
+                    resolve(null);
+                } else if (row) {
+                    try {
+                        row.personality = JSON.parse(row.personality_json);
+                        resolve(row);
+                    } catch (e) {
+                        console.error('[MEMORY] Failed to parse personality JSON:', e.message);
+                        resolve(null);
+                    }
+                } else {
+                    resolve(null);
+                }
+            });
+        });
+    }
+
+    /**
+     * Update relationship with compatibility modifier
+     */
+    async updateRelationshipWithCompatibility(agentUUID, otherAgentUUID, otherAgentName, compatibility, interaction) {
+        if (!this.initialized) await this.initialize();
+
+        if (!agentUUID || !otherAgentUUID || !otherAgentName || compatibility === undefined) {
+            return Promise.resolve();
+        }
+
+        // Compatibility affects bond strength
+        // High compatibility (>0.5) gives extra bond boost
+        // Low compatibility (<-0.2) creates tension
+        let bondModifier = interaction.bondChange || 0;
+
+        if (compatibility > 0.5) {
+            bondModifier += 0.1; // Extra boost for compatible agents
+        } else if (compatibility < -0.2) {
+            bondModifier -= 0.05; // Tension for incompatible agents
+        }
+
+        const modifiedInteraction = {
+            ...interaction,
+            bondChange: bondModifier
+        };
+
+        return this.updateRelationship(agentUUID, otherAgentUUID, otherAgentName, modifiedInteraction);
     }
 
     /**
