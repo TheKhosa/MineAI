@@ -3510,7 +3510,7 @@ async function startVillage(serverConfig, agentTypes = ['EXPLORING', 'MINING']) 
 const SERVER_CONFIG = {
     host: 'vps-38b05e45.vps.ovh.net',
     port: 25565,
-    version: '1.21',
+    version: '1.21.10', // Updated to 1.21.10 for latest compatibility
     auth: 'offline'
 };
 
