@@ -431,35 +431,55 @@ What do you say to ${listener.name}? Respond in character with just the dialogue
             do_sample: true
         });
 
-        // Extract just the generated text (remove prompt)
-        let text = result[0].generated_text.replace(prompt, '').trim();
+        // Get the full generated text
+        let fullText = result[0].generated_text;
 
-        // Remove chat template tokens
+        // Find the assistant's response after the last <|im_start|>assistant marker
+        const assistantMarker = '<|im_start|>assistant';
+        const assistantIndex = fullText.lastIndexOf(assistantMarker);
+
+        let text = '';
+        if (assistantIndex !== -1) {
+            // Extract everything after the assistant marker
+            text = fullText.substring(assistantIndex + assistantMarker.length).trim();
+
+            // Remove ending markers
+            text = text.split('<|im_end|>')[0].trim();
+            text = text.split('<|im_start|>')[0].trim();
+        } else {
+            // Fallback: try to remove the prompt
+            text = fullText.replace(prompt, '').trim();
+        }
+
+        // Remove any remaining template tokens
         text = text.replace(/<\|im_end\|>/g, '');
         text = text.replace(/<\|im_start\|>/g, '');
-        text = text.replace(/^assistant\s*/i, '');
-        text = text.replace(/^user\s*/i, '');
-        text = text.replace(/^system\s*/i, '');
+        text = text.replace(/^assistant[\s:]*|^user[\s:]*|^system[\s:]*/gi, '');
 
-        // Remove common unwanted prefixes
-        text = text.replace(/^["']|["']$/g, ''); // Remove quotes
+        // Remove quotes and common prefixes
+        text = text.replace(/^["']|["']$/g, '');
         text = text.replace(/^\w+:\s*/, ''); // Remove "Name: " prefix
 
-        // Clean up and take only first 1-2 sentences
+        // Clean up and extract sentences
         text = text.trim();
         const sentences = text.match(/[^.!?]+[.!?]+/g);
         if (sentences && sentences.length > 0) {
             // Take first 1-2 sentences max
             text = sentences.slice(0, 2).join(' ').trim();
-        } else {
-            // No punctuation found, just take first part
+        } else if (text.length > 0) {
+            // No punctuation, limit by words
             const words = text.split(' ');
             if (words.length > 20) {
                 text = words.slice(0, 20).join(' ') + '...';
             }
         }
 
-        return text || 'Hey there!';
+        // Final safety check
+        if (!text || text.length === 0 || text.toLowerCase().includes('you are roleplaying')) {
+            return 'Hey there!';
+        }
+
+        return text;
     }
 
     /**
