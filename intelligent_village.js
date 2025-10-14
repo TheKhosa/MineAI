@@ -1227,9 +1227,11 @@ class AgentRewardTracker {
 
     addReward(type, amount, description = '') {
         // Apply global multiplier to all positive rewards
-        let adjustedAmount = amount;
-        if (amount > 0) {
-            adjustedAmount = amount * REWARD_CONFIG.GLOBAL_MULTIPLIER;
+        // Ensure amount is a number
+        const numAmount = Number(amount) || 0;
+        let adjustedAmount = numAmount;
+        if (numAmount > 0) {
+            adjustedAmount = numAmount * REWARD_CONFIG.GLOBAL_MULTIPLIER;
         }
 
         this.totalReward += adjustedAmount;
@@ -2609,9 +2611,14 @@ function showAgentStatus(bot) {
     const bugStatus = bot.isBugged ? ' [BUGGED]' : '';
     const beaconStatus = bot.rewards.needsResources ? ' [NEEDS RESOURCES]' : '';
     console.log(`\n[${bot.agentName}${bugStatus}${beaconStatus}]`);
-    console.log(`  Reward: ${stats.total_reward.toFixed(2)} | Survival: ${stats.survival_time.toFixed(1)}s`);
-    console.log(`  Resources: ${stats.resources_gathered} | Kills: ${stats.mobs_killed} | Trades: ${stats.trades_completed}`);
-    console.log(`  Knowledge: Shared=${stats.knowledge_shared}, Learned=${stats.knowledge_learned}`);
+
+    // Ensure numeric values for display
+    const totalReward = Number(stats.total_reward) || 0;
+    const survivalTime = Number(stats.survival_time) || 0;
+
+    console.log(`  Reward: ${totalReward.toFixed(2)} | Survival: ${survivalTime.toFixed(1)}s`);
+    console.log(`  Resources: ${stats.resources_gathered || 0} | Kills: ${stats.mobs_killed || 0} | Trades: ${stats.trades_completed || 0}`);
+    console.log(`  Knowledge: Shared=${stats.knowledge_shared || 0}, Learned=${stats.knowledge_learned || 0}`);
 }
 
 // === ML BEHAVIOR LOOP ===

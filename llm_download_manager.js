@@ -291,20 +291,34 @@ class DownloadManager {
     /**
      * Monitor model download progress (for Transformers.js)
      */
-    async monitorTransformersDownload(onProgress) {
-        console.log('\n📡 Initializing model download monitor...');
-        console.log('⏳ Please wait while the model is being downloaded...\n');
+    async monitorTransformersDownload(onProgress, checkComplete) {
+        console.log('\n📡 Monitoring model download...');
 
         let lastSize = 0;
         let stableCount = 0;
+        let waitingCount = 0;
         const homeDir = process.env.USERPROFILE || process.env.HOME;
         const cacheDir = path.join(homeDir, '.cache', 'huggingface', 'transformers');
 
         return new Promise((resolve) => {
             const interval = setInterval(() => {
                 try {
+                    // Check if initialization already completed
+                    if (checkComplete && checkComplete()) {
+                        clearInterval(interval);
+                        console.log('✅ Model initialization complete!');
+                        resolve(true);
+                        return;
+                    }
+
                     if (!fs.existsSync(cacheDir)) {
-                        console.log('⏳ Waiting for download to start...');
+                        waitingCount++;
+                        if (waitingCount > 10) {
+                            // After 20 seconds of waiting, just resolve
+                            clearInterval(interval);
+                            resolve(true);
+                            return;
+                        }
                         return;
                     }
 
@@ -333,6 +347,7 @@ class DownloadManager {
 
                         lastSize = totalSize;
                         stableCount = 0;
+                        waitingCount = 0;
                     } else {
                         stableCount++;
                         if (stableCount > 5 && totalSize > 0) {
@@ -347,11 +362,11 @@ class DownloadManager {
                 }
             }, 2000); // Check every 2 seconds
 
-            // Timeout after 30 minutes
+            // Timeout after 5 minutes (model should be loaded by then)
             setTimeout(() => {
                 clearInterval(interval);
-                resolve(false);
-            }, 30 * 60 * 1000);
+                resolve(true);
+            }, 5 * 60 * 1000);
         });
     }
 
@@ -383,22 +398,44 @@ class DownloadManager {
         console.log(`\n🔧 Initializing ${backend.toUpperCase()} backend...`);
 
         if (backend === 'transformers') {
-            // Start initialization in background
-            const initPromise = initCallback();
+            // Check if model is already cached
+            const homeDir = process.env.USERPROFILE || process.env.HOME;
+            const cacheDir = path.join(homeDir, '.cache', 'huggingface', 'transformers');
+            const modelFiles = fs.existsSync(cacheDir) ?
+                this.findFilesRecursive(cacheDir, /\.onnx$/) : [];
 
-            // Monitor download progress
-            const downloadPromise = this.monitorTransformersDownload((progress) => {
-                // Progress callback if needed
+            if (modelFiles.length > 0) {
+                // Model already cached, just initialize
+                console.log('💾 Model already cached - loading from disk...');
+                await initCallback();
+                console.log('✅ Backend initialization complete!');
+                return true;
+            }
+
+            // Model not cached - monitor download
+            console.log('\n⏳ First-time setup: downloading model (~120MB)...');
+            console.log('💡 This is a one-time download - subsequent runs will be instant!\n');
+
+            let initComplete = false;
+
+            // Start initialization in background
+            const initPromise = initCallback().then(() => {
+                initComplete = true;
             });
 
-            // Wait for both to complete
-            console.log('\n⏳ First-time setup may take 5-10 minutes for model download...');
-            console.log('💡 Subsequent runs will be instant - this is a one-time setup!\n');
+            // Monitor download progress (will stop when init completes)
+            const downloadPromise = this.monitorTransformersDownload(
+                (progress) => {
+                    // Progress callback if needed
+                },
+                () => initComplete  // Check function
+            );
 
-            await Promise.race([initPromise, downloadPromise]);
+            // Wait for initialization to complete
+            await initPromise;
 
-            // Give a bit more time for initialization to complete
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            // Wait a moment for monitor to finish
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             console.log('✅ Backend initialization complete!');
             return true;

@@ -50,10 +50,10 @@ class AgentChatLLM {
 
         // Model configuration
         this.config = {
-            maxTokens: 50, // Keep responses short for agent chat
-            temperature: 0.7,
-            topP: 0.9,
-            repetitionPenalty: 1.2 // Reduce repetitive outputs
+            maxTokens: 60, // Enough for 1-2 sentences
+            temperature: 0.8, // Higher for more creative/varied responses
+            topP: 0.92,
+            repetitionPenalty: 1.3 // Stronger penalty for repetition
         };
     }
 
@@ -348,41 +348,59 @@ class AgentChatLLM {
         const speakerNeeds = this.summarizeNeeds(speaker.needs);
         const listenerNeeds = this.summarizeNeeds(listener.needs);
 
-        // Add personality information if available
-        let personalityInfo = '';
+        // Build context description
+        let situation = '';
+        if (context === 'nearby') {
+            situation = 'You just noticed them nearby and want to greet them.';
+        } else if (context === 'trading') {
+            situation = 'You want to discuss trading resources.';
+        } else if (context === 'danger') {
+            situation = 'There is danger nearby and you need to warn them.';
+        } else if (context === 'low_health') {
+            situation = 'You are injured and need help.';
+        } else if (context === 'exploring') {
+            situation = 'You are exploring and want to share what you found.';
+        } else {
+            situation = 'You want to talk to them.';
+        }
+
+        // Add personality/relationship context
+        let personalityContext = '';
         if (speaker.personality && speaker.preferenceToDiscuss) {
             const topic = speaker.preferenceToDiscuss;
-            personalityInfo = `\nYour personality: ${speaker.personality.traits?.slice(0, 3).join(', ') || 'balanced'}`;
-            if (topic) {
-                personalityInfo += `\nYou want to discuss: You ${topic.sentiment} ${topic.item}`;
+            if (topic.sentiment === 'like') {
+                personalityContext = ` You really like ${topic.item} and might mention it.`;
+            } else if (topic.sentiment === 'dislike') {
+                personalityContext = ` You dislike ${topic.item}.`;
             }
         }
 
-        // Add compatibility/relationship info if available
-        let relationshipInfo = '';
         if (speaker.compatibility !== undefined && listener.name) {
             if (speaker.compatibility > 0.5) {
-                relationshipInfo = `\nYou feel a strong connection with ${listener.name}.`;
+                personalityContext += ` You are good friends with ${listener.name}.`;
             } else if (speaker.compatibility < -0.2) {
-                relationshipInfo = `\nYou feel tension with ${listener.name}.`;
+                personalityContext += ` You don't get along well with ${listener.name}.`;
             }
         }
 
-        return `You are ${speaker.name}, a Minecraft agent. You're talking to ${listener.name}.
+        // Build concise status
+        let speakerStatus = [];
+        if (speaker.health && speaker.health < 10) speakerStatus.push('low on health');
+        if (speaker.food && speaker.food < 10) speakerStatus.push('hungry');
+        if (speakerNeeds.includes('unsafe')) speakerStatus.push('feeling unsafe');
+        if (speakerNeeds.includes('need resources')) speakerStatus.push('need resources');
 
-Your status:
-- Health: ${speaker.health || 'unknown'}
-- Food: ${speaker.food || 'unknown'}
-- Needs: ${speakerNeeds}
-- Inventory: ${speaker.inventory || 'empty'}
-- Mood: ${speaker.mood || 'neutral'}${personalityInfo}${relationshipInfo}
+        const statusStr = speakerStatus.length > 0 ? ` You are ${speakerStatus.join(' and ')}.` : '';
 
-${listener.name}'s status:
-- Needs: ${listenerNeeds}
+        // Use proper instruct format for Qwen2.5-Instruct
+        return `<|im_start|>system
+You are roleplaying as ${speaker.name}, a Minecraft player. Write natural, casual dialogue as this character would speak. Keep responses to 1-2 short sentences maximum. Be conversational and authentic.<|im_end|>
+<|im_start|>user
+You are ${speaker.name} talking to ${listener.name} in Minecraft. ${situation}${personalityContext}${statusStr}
 
-Context: ${context}
-
-Generate a SHORT (1-2 sentences) message to ${listener.name}:`;
+What do you say to ${listener.name}? Respond in character with just the dialogue, no quotes or labels.<|im_end|>
+<|im_start|>assistant
+`;
     }
 
     /**
@@ -416,13 +434,32 @@ Generate a SHORT (1-2 sentences) message to ${listener.name}:`;
         // Extract just the generated text (remove prompt)
         let text = result[0].generated_text.replace(prompt, '').trim();
 
-        // Clean up: take only first sentence for short agent messages
-        const firstSentence = text.match(/^[^.!?]+[.!?]/);
-        if (firstSentence) {
-            text = firstSentence[0].trim();
+        // Remove chat template tokens
+        text = text.replace(/<\|im_end\|>/g, '');
+        text = text.replace(/<\|im_start\|>/g, '');
+        text = text.replace(/^assistant\s*/i, '');
+        text = text.replace(/^user\s*/i, '');
+        text = text.replace(/^system\s*/i, '');
+
+        // Remove common unwanted prefixes
+        text = text.replace(/^["']|["']$/g, ''); // Remove quotes
+        text = text.replace(/^\w+:\s*/, ''); // Remove "Name: " prefix
+
+        // Clean up and take only first 1-2 sentences
+        text = text.trim();
+        const sentences = text.match(/[^.!?]+[.!?]+/g);
+        if (sentences && sentences.length > 0) {
+            // Take first 1-2 sentences max
+            text = sentences.slice(0, 2).join(' ').trim();
+        } else {
+            // No punctuation found, just take first part
+            const words = text.split(' ');
+            if (words.length > 20) {
+                text = words.slice(0, 20).join(' ') + '...';
+            }
         }
 
-        return text;
+        return text || 'Hey there!';
     }
 
     /**
