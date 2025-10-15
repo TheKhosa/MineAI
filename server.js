@@ -1616,26 +1616,34 @@ async function initializeSystems() {
     }
 
     // Initialize Chat LLM
-    console.log('\n' + '='.repeat(70));
-    console.log('[CHAT LLM] Initializing Agent Communication...');
-    console.log('[CHAT LLM] Backend: ' + config.llm.backend.toUpperCase());
-    console.log('='.repeat(70));
+    if (config.llm.enabled) {
+        console.log('\n' + '='.repeat(70));
+        console.log('[CHAT LLM] Initializing Agent Communication...');
+        console.log('[CHAT LLM] Backend: ' + config.llm.backend.toUpperCase());
+        console.log('='.repeat(70));
 
-    downloadManager = new DownloadManager();
-    const prereqsMet = await downloadManager.checkPrerequisites(config.llm.backend);
+        downloadManager = new DownloadManager();
+        const prereqsMet = await downloadManager.checkPrerequisites(config.llm.backend);
 
-    if (!prereqsMet) {
-        console.error('[CHAT LLM] Prerequisites not met - exiting');
-        process.exit(1);
+        if (!prereqsMet) {
+            console.error('[CHAT LLM] Prerequisites not met - exiting');
+            process.exit(1);
+        }
+
+        chatLLM = getChatLLM(config.llm.backend);
+        await downloadManager.initializeWithProgress(config.llm.backend, async () => {
+            await chatLLM.initialize();
+        });
+
+        console.log('[CHAT LLM] Chat system ready');
+        console.log('='.repeat(70) + '\n');
+    } else {
+        console.log('\n' + '='.repeat(70));
+        console.log('[CHAT LLM] Agent chat DISABLED in config');
+        console.log('[CHAT LLM] Agents will use simple fallback responses');
+        console.log('='.repeat(70) + '\n');
+        chatLLM = null;  // Set to null when disabled
     }
-
-    chatLLM = getChatLLM(config.llm.backend);
-    await downloadManager.initializeWithProgress(config.llm.backend, async () => {
-        await chatLLM.initialize();
-    });
-
-    console.log('[CHAT LLM] Chat system ready');
-    console.log('='.repeat(70) + '\n');
 
     // Initialize Personality System
     console.log('\n' + '='.repeat(70));
