@@ -84,6 +84,8 @@ module.exports = {
 
     // ===== LLM CONFIGURATION =====
     llm: {
+        enabled: false,  // Enable/disable agent chat (set false for dev to skip model loading)
+
         // Backend options: 'mock', 'transformers', 'llamacpp', 'ollama', 'python'
         backend: 'transformers',  // Using transformers for now, switch to llamacpp after node-llama-cpp installs
 

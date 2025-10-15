@@ -87,25 +87,37 @@ This project creates self-evolving AI agents in Minecraft that:
 
 ### 🤖 Deep Reinforcement Learning (PPO)
 
-- **320-dimensional state space** encoding:
+- **429-dimensional state space** encoding:
   - Social context (nearby agents, cooperation opportunities)
   - Achievement progress (diamonds, armor, exploration)
   - Curiosity signals (novelty detection, exploration breadth)
   - Psychological needs (hunger, safety, social, comfort, creativity)
   - Emotional states (happiness, stress, motivation, loneliness)
   - Memory context (recent significant events)
+  - Sub-skills tracking (20 McMMO-style skills)
+  - Moodles/debuffs (14 status effects)
 
-- **70 diverse actions** including:
-  - Movement, combat, mining, crafting
-  - Cooperative actions (coordinate mining, build together, defend ally)
-  - Village building (place structures, build walls, claim territory)
-  - Utility actions (rest, seek adventure, pursue achievements)
+- **216 diverse actions** (3x expansion) with modular architecture:
+  - **Basic Actions** (76): Movement, combat, mining, crafting, cooperative, village building
+  - **Inventory Management** (15): Toss trash, sort, equip armor sets, prioritize valuables
+  - **Advanced Crafting** (20): Specific tool/weapon/armor recipes, smelting
+  - **Container Operations** (12): Chest management, furnace operations
+  - **Enchanting & Brewing** (10): Enchant items, anvil repair, brew potions
+  - **Trading** (8): Villager trading, cure zombies, trading halls
+  - **Agriculture** (15): Crop farming, animal breeding, farming automation
+  - **Redstone** (10): Levers, buttons, doors, redstone circuits
+  - **Bed & Time** (5): Sleep mechanics, shelter finding
+  - **Advanced Combat** (12): Critical hits, shield blocking, kiting, combos
+  - **Advanced Navigation** (15): Swimming, climbing, parkour, pillaring
+  - **Resource Optimization** (10): Tool selection, efficient mining strategies
+  - **Communication** (8): Agent signaling, formation coordination
 
 - **Dense reward shaping** with psychological modulation:
   - Survival, exploration, cooperation rewards
   - Need-based reward scaling (hungry agents get 2x food rewards)
   - Mood-based multipliers (high motivation = stronger rewards)
   - Relationship bonuses (defending friends = double reward)
+  - Skill progression rewards (XP for actions, big bonus on level-up)
 
 ### 🧠 Memory & Psychology System
 
@@ -128,11 +140,13 @@ This project creates self-evolving AI agents in Minecraft that:
 ### 💬 Agent Chat System
 
 **Transformers.js Local LLM**:
-- IBM Granite 4.0 Micro (3B parameters, hybrid Mamba-Transformer)
-- Runs entirely locally (no API calls)
-- Context-aware dialogue generation
-- Fallback to rule-based mock system
-- Short, natural agent conversations
+- Llama-3.2-1B-Instruct (1.24GB Q8 quantization)
+- Runs entirely locally (no API calls, auto-downloads on first run)
+- Rich context-aware dialogue with full agent profiles
+- Multiple backend support (transformers, llamacpp, ollama, mock)
+- Pathfinding integration - agents walk towards conversation partners
+- Short, natural agent conversations with personality
+- Configurable via config.js
 
 ### 🏘️ Emergent Cooperation & Villages
 
@@ -190,11 +204,11 @@ npm install
 # Set online-mode=false in server.properties
 # Start server on localhost:25565
 
-# Start the system
-node intelligent_village.js
+# Start the system (NEW modular version - recommended)
+node server.js
 
-# Or use Windows batch file
-start.bat
+# Or legacy version
+node intelligent_village.js
 
 # Access dashboard
 # Open browser to http://localhost:3000
@@ -205,11 +219,9 @@ start.bat
 ## 📖 Documentation
 
 - **[HOWTO.md](HOWTO.md)** - Detailed setup, configuration, and usage guide
-- **[LLM_SETUP.md](LLM_SETUP.md)** - Agent chat LLM configuration (Transformers.js, node-llama-cpp, etc.)
-- **[SCALABILITY_GUIDE.md](SCALABILITY_GUIDE.md)** - Multi-threading and scaling to 1000+ agents
+- **[CLAUDE.md](CLAUDE.md)** - Comprehensive development notes, architecture, and recent updates
+- **[PERSONALITY_INTEGRATION_GUIDE.md](PERSONALITY_INTEGRATION_GUIDE.md)** - Agent personality system
 - **[ML_README.md](ML_README.md)** - Machine learning architecture deep dive
-- **[DASHBOARD_README.md](DASHBOARD_README.md)** - Dashboard features and customization
-- **[CLAUDE.md](CLAUDE.md)** - Development notes and recent updates
 
 ---
 
@@ -218,14 +230,14 @@ start.bat
 | Component | Technology | Purpose |
 |-----------|-----------|---------|
 | **Bot Framework** | Mineflayer | Minecraft protocol implementation |
-| **ML Framework** | TensorFlow.js | Neural networks (PPO) |
-| **Chat LLM** | Transformers.js | Local language model (Granite 4.0 Micro) |
+| **ML Framework** | TensorFlow.js | Neural networks (PPO, 216-action space) |
+| **Chat LLM** | Transformers.js | Local language model (Llama-3.2-1B) |
 | **Database** | SQLite3 | Episodic memory & lineage tracking |
 | **Web Server** | Express.js | Dashboard backend |
 | **Real-time** | Socket.IO | Live dashboard updates |
 | **Multi-threading** | Worker Threads | Scalable agent isolation |
 | **Pathfinding** | mineflayer-pathfinder | Navigation |
-| **State Management** | Custom Encoders | 320D state vectors |
+| **State Management** | Custom Encoders | 429D state vectors |
 
 ---
 
@@ -243,8 +255,8 @@ start.bat
            │
            ▼
     ┌──────────────┐
-    │    ENCODE    │  Convert to 320-dimensional state vector:
-    │     State    │  [health, position, inventory, social_context, needs, moods, ...]
+    │    ENCODE    │  Convert to 429-dimensional state vector:
+    │     State    │  [health, position, inventory, social_context, needs, moods, skills, ...]
     └──────┬───────┘
            │
            ▼
@@ -256,7 +268,7 @@ start.bat
            ▼
     ┌──────────────┐
     │    SELECT    │  Neural Network (PPO Actor-Critic):
-    │    Action    │  - Actor outputs action probabilities (70 actions)
+    │    Action    │  - Actor outputs action probabilities (216 actions)
     └──────┬───────┘  - Critic estimates state value
            │          - Goal-based bias applied (hierarchical RL)
            ▼
@@ -382,27 +394,44 @@ After training, agents have been observed to:
 
 ## 🛠️ Configuration
 
-Edit `intelligent_village.js` for key settings:
+Edit `config.js` for key settings:
 
 ```javascript
-// === SCALABILITY CONFIGURATION ===
-const USE_THREADING = true;   // Multi-threaded agents (recommended)
-const MAX_WORKERS = 1000;     // Maximum concurrent agents
+// === AGENT CONFIGURATION ===
+maxAgents: 20                 // Maximum concurrent agents
+batchSpawnSize: 1             // Agents spawned per batch
+batchSpawnDelay: 15000        // Delay between spawns (ms)
 
-// === ML TRAINING ===
-const ML_ENABLED = true;      // Enable/disable ML training
-const LEARNING_RATE = 0.0003; // Neural network learning rate
+// === ML CONFIGURATION ===
+ml: {
+    enabled: true,            // Enable/disable ML training
+    learningRate: 0.0003,     // Neural network learning rate
+    stateSize: 429,           // State vector dimensions
+    actionSize: 216           // Action space size (auto-detected)
+}
 
-// === GENETIC EVOLUTION ===
-const MUTATION_RATE = 0.10;      // 10% of weights mutate
-const MUTATION_STRENGTH = 0.05;  // Mutation magnitude (5%)
+// === LLM CHAT CONFIGURATION ===
+llm: {
+    enabled: true,            // Enable/disable agent chat (set false for dev)
+    backend: 'transformers',  // 'transformers', 'llamacpp', 'ollama', 'mock'
+    model: 'onnx-community/Llama-3.2-1B-Instruct',
+    temperature: 1.2,         // Creativity (0.8-2.0)
+    maxTokens: 100
+}
 
 // === REWARD SHAPING ===
-const SURVIVAL_REWARD = 0.1;      // Per-step survival
-const EXPLORATION_REWARD = 15.0;  // New chunk discovery
-const COOPERATION_BONUS = 5.0;    // Working near others
-const PICKUP_REWARD = 5.0;        // Per item collected
-const TOOL_CRAFT_REWARD = 10.0;   // Crafting tools
+rewards: {
+    survival: 0.1,            // Per-step survival
+    exploration: 15.0,        // New chunk discovery
+    inventoryPickup: 5.0,     // Per item collected
+    toolCrafting: 10.0,       // Crafting tools
+    movement: 0.5             // Per block traveled
+}
+
+// === FEATURES ===
+enableMultiThreading: true    // Worker pool (1000+ agents)
+enableKnowledgeSharing: true  // SQLite collective brain
+enableSocialRewards: true     // Cooperation bonuses
 ```
 
 ---
@@ -434,7 +463,8 @@ const TOOL_CRAFT_REWARD = 10.0;   // Crafting tools
 
 ### Chat LLM Errors
 - System falls back to mock (rule-based) automatically
-- First run downloads Granite 4.0 Micro model (~800MB)
+- First run downloads Llama-3.2-1B model (~1.24GB)
+- Set `llm.enabled: false` in config.js to disable chat for development
 - Ensure internet connection for initial model download
 
 ---
@@ -485,7 +515,7 @@ MIT License - see LICENSE file
 - **Transformers.js** - Local LLM inference
 - **The Sims & Dwarf Fortress** - Inspiration for emergent AI design
 - **OpenAI** - PPO algorithm research
-- **IBM** - Granite 4.0 Micro model
+- **Meta** - Llama 3.2 model family
 
 ---
 
