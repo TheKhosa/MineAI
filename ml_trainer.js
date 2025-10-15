@@ -11,6 +11,7 @@ const { getGoalManager } = require('./ml_hierarchical_goals');
 const { getSubSkillsSystem } = require('./ml_zomboid_skills');
 const { getMoodlesSystem } = require('./ml_zomboid_moodles');
 const { getSharedBrain } = require('./ml_brain_sqlite');
+const { getEmergentTaskSystem } = require('./ml_emergent_tasks');
 const fs = require('fs');
 const path = require('path');
 
@@ -20,6 +21,7 @@ class MLTrainer {
         this.stateEncoder = new StateEncoder();
         this.actionSpace = new ActionSpace();
         this.goalManager = getGoalManager(); // Hierarchical goal system
+        this.emergentTaskSystem = getEmergentTaskSystem(); // Multi-action sequence rewards
 
         // HIERARCHICAL BRAIN ARCHITECTURE
         // 1. Shared collective brain - ONE neural network + SQLite used by ALL agents
@@ -69,11 +71,49 @@ class MLTrainer {
             successRate: 0
         };
 
+        // Population Management System
+        this.populationManager = {
+            maxPopulation: 20,              // Maximum concurrent agents
+            minPopulation: 5,               // Minimum agents to maintain
+            targetPopulation: 15,           // Ideal population size
+            spawnCooldown: 15000,           // 15 seconds between spawns
+            lastSpawnTime: 0,
+
+            // Fitness tracking for evolution
+            agentFitness: new Map(),        // agentName -> fitness score
+            agentLifetimes: new Map(),      // agentName -> lifetime in ticks
+            agentGenerations: new Map(),    // agentName -> generation number
+
+            // Evolution parameters
+            eliteCount: 3,                  // Top N agents to preserve
+            mutationRate: 0.10,             // 10% weight mutation
+            mutationStrength: 0.05,         // 5% weight change
+            tournamentSize: 3,              // For parent selection
+
+            // Performance tracking
+            generationStats: [],            // History of generation performance
+            currentGeneration: 1,
+
+            // Population diversity
+            roleDistribution: {             // Target distribution by role
+                'MINING': 0.25,
+                'BUILDING': 0.20,
+                'FARMING': 0.15,
+                'COMBAT': 0.15,
+                'EXPLORING': 0.15,
+                'TRADING': 0.10
+            }
+        };
+
         console.log('[ML TRAINER] Initialized HIERARCHICAL ML Training System');
         console.log('[ML TRAINER] Architecture: Shared Collective + Personal Specialization');
         console.log('[ML TRAINER]   ├─ Shared TensorFlow Network (general knowledge)');
         console.log('[ML TRAINER]   ├─ SQLite Database (collective strategies)');
         console.log('[ML TRAINER]   └─ Personal TensorFlow Networks (individual expertise)');
+        console.log('[ML TRAINER] Population Management: Genetic Evolution Enabled');
+        console.log(`[ML TRAINER]   ├─ Target Population: ${this.populationManager.targetPopulation}`);
+        console.log(`[ML TRAINER]   ├─ Elite Preservation: Top ${this.populationManager.eliteCount} agents`);
+        console.log(`[ML TRAINER]   └─ Mutation Rate: ${this.populationManager.mutationRate * 100}%`);
         console.log(`[ML TRAINER] Action Space Size: ${this.actionSpace.ACTION_COUNT}`);
         console.log(`[ML TRAINER] State Vector Size: ${this.stateEncoder.STATE_SIZE}`);
     }
@@ -294,10 +334,25 @@ class MLTrainer {
             // Execute action in Minecraft
             const actionSuccess = await this.actionSpace.executeAction(action, bot);
 
+            // Record action for emergent task tracking
+            const actionName = this.actionSpace.getActionName(action);
+            this.emergentTaskSystem.recordAction(bot.agentName, actionName);
+
             // Store state-action for next step
             if (bot.mlLastState !== null) {
                 // Calculate reward from previous step
-                const reward = this.calculateReward(bot);
+                let reward = this.calculateReward(bot);
+
+                // Check for emergent task completions and add bonus rewards
+                const taskResult = this.emergentTaskSystem.checkTaskCompletion(bot.agentName, bot);
+                if (taskResult.totalReward > 0) {
+                    reward += taskResult.totalReward;
+                    console.log(`[ML TRAINER] 🎯 ${bot.agentName} completed ${taskResult.completedTasks.length} emergent tasks: +${taskResult.totalReward} bonus`);
+
+                    // Store task achievements on bot for potential display
+                    if (!bot.completedEmergentTasks) bot.completedEmergentTasks = [];
+                    bot.completedEmergentTasks.push(...taskResult.completedTasks);
+                }
 
                 // Add to episode buffer
                 bot.mlEpisodeBuffer.addStep(
@@ -832,6 +887,15 @@ class MLTrainer {
     async handleAgentDeath(bot) {
         if (!bot.mlEpisodeBuffer) return;
 
+        // Calculate final fitness score before death
+        this.updateAgentFitness(bot);
+        const finalFitness = this.populationManager.agentFitness.get(bot.agentName) || 0;
+
+        console.log(`[ML TRAINER] 💀 ${bot.agentName} died - Final Fitness: ${finalFitness.toFixed(2)}`);
+
+        // Reset emergent task tracking (clear action history, keep completed tasks)
+        this.emergentTaskSystem.resetAgent(bot.agentName);
+
         const episodeBuffer = bot.mlEpisodeBuffer;
 
         // Add final step with death penalty
@@ -1039,6 +1103,24 @@ class MLTrainer {
      * Get training statistics
      */
     getStats() {
+        const pm = this.populationManager;
+
+        // Calculate current role distribution
+        const currentRoles = {};
+        for (const [agentName, brain] of this.personalBrains || []) {
+            const role = brain.name.split('_')[0];
+            currentRoles[role] = (currentRoles[role] || 0) + 1;
+        }
+
+        // Calculate fitness stats
+        let avgFitness = 0;
+        let maxFitness = 0;
+        if (pm.agentFitness.size > 0) {
+            const fitnessValues = Array.from(pm.agentFitness.values());
+            avgFitness = fitnessValues.reduce((sum, f) => sum + f, 0) / fitnessValues.length;
+            maxFitness = Math.max(...fitnessValues);
+        }
+
         return {
             ...this.stats,
             totalSteps: this.totalSteps,
@@ -1048,6 +1130,20 @@ class MLTrainer {
             personalBrainsCount: this.personalBrains ? this.personalBrains.size : 0,
             sqliteBrainActive: this.sharedSQLiteBrain.initialized,
             replayBufferStats: this.globalReplayBuffer.getStats(),
+            emergentTasks: this.emergentTaskSystem.getStats(),
+            population: {
+                current: pm.agentFitness.size,
+                target: pm.targetPopulation,
+                min: pm.minPopulation,
+                max: pm.maxPopulation,
+                generation: pm.currentGeneration,
+                avgFitness: avgFitness.toFixed(2),
+                maxFitness: maxFitness.toFixed(2),
+                roleDistribution: currentRoles,
+                targetDistribution: pm.roleDistribution,
+                eliteCount: pm.eliteCount,
+                generationHistory: pm.generationStats
+            },
             architecture: 'Hierarchical: Shared Collective + Personal Specialization'
         };
     }
@@ -1140,6 +1236,230 @@ class MLTrainer {
         if (!fs.existsSync(this.modelPath)) {
             fs.mkdirSync(this.modelPath, { recursive: true });
             console.log(`[ML TRAINER] Created model directory: ${this.modelPath}`);
+        }
+    }
+
+    /**
+     * Calculate fitness score for an agent (for genetic evolution)
+     * Combines survival time, rewards, task completions, and skills
+     */
+    calculateFitness(bot) {
+        let fitness = 0;
+
+        // 1. Survival time (up to 50 points)
+        const survivalTime = bot.mlSurvivalTime || 0;
+        fitness += Math.min(survivalTime * 0.1, 50);
+
+        // 2. Episode rewards (up to 100 points)
+        if (bot.mlEpisodeBuffer) {
+            const episodeReward = bot.mlEpisodeBuffer.totalReward();
+            fitness += Math.max(0, episodeReward);  // Only positive rewards
+        }
+
+        // 3. Emergent task completions (up to 150 points)
+        if (bot.completedEmergentTasks) {
+            fitness += bot.completedEmergentTasks.length * 15;
+        }
+
+        // 4. Inventory value (up to 50 points)
+        const invSize = bot.inventory?.items().length || 0;
+        fitness += Math.min(invSize * 2, 50);
+
+        // 5. Tool milestones (30 points each)
+        if (bot.mlHadPickaxe) fitness += 30;
+        if (bot.mlHadAxe) fitness += 30;
+        if (bot.mlHadSword) fitness += 30;
+
+        // 6. Exploration (up to 100 points)
+        if (bot.mlExploredChunks) {
+            fitness += Math.min(bot.mlExploredChunks.size * 5, 100);
+        }
+
+        // 7. Skills level (Project Zomboid system) (up to 100 points)
+        if (bot.skills) {
+            const totalSkillLevel = Object.values(bot.skills).reduce((sum, skill) => sum + skill.level, 0);
+            fitness += Math.min(totalSkillLevel * 5, 100);
+        }
+
+        // 8. Social bonds (up to 50 points)
+        if (bot.relationships) {
+            let bondStrength = 0;
+            for (const rel of bot.relationships.values()) {
+                bondStrength += rel.bond;
+            }
+            fitness += Math.min(bondStrength * 10, 50);
+        }
+
+        return Math.max(0, fitness);  // Never negative
+    }
+
+    /**
+     * Track agent fitness during life
+     */
+    updateAgentFitness(bot) {
+        const fitness = this.calculateFitness(bot);
+        this.populationManager.agentFitness.set(bot.agentName, fitness);
+        this.populationManager.agentLifetimes.set(bot.agentName, bot.mlStepCount || 0);
+
+        if (!this.populationManager.agentGenerations.has(bot.agentName)) {
+            this.populationManager.agentGenerations.set(bot.agentName, bot.generation || 1);
+        }
+    }
+
+    /**
+     * Select parent for reproduction using tournament selection
+     * Returns the personal brain of the fittest agent
+     */
+    selectParentBrain() {
+        if (this.populationManager.agentFitness.size < 2) {
+            return null;  // Not enough agents for selection
+        }
+
+        // Tournament selection: Pick N random agents, return fittest
+        const tournamentSize = Math.min(
+            this.populationManager.tournamentSize,
+            this.populationManager.agentFitness.size
+        );
+
+        const agents = Array.from(this.populationManager.agentFitness.entries());
+        const tournament = [];
+
+        for (let i = 0; i < tournamentSize; i++) {
+            const randomAgent = agents[Math.floor(Math.random() * agents.length)];
+            tournament.push(randomAgent);
+        }
+
+        // Find fittest in tournament
+        tournament.sort((a, b) => b[1] - a[1]);  // Sort by fitness descending
+        const winnerName = tournament[0][0];
+
+        // Return winner's personal brain
+        return this.personalBrains.get(winnerName) || null;
+    }
+
+    /**
+     * Get top elite agents (best performing agents to preserve)
+     */
+    getEliteAgents() {
+        const sortedAgents = Array.from(this.populationManager.agentFitness.entries())
+            .sort((a, b) => b[1] - a[1]);  // Sort by fitness descending
+
+        return sortedAgents.slice(0, this.populationManager.eliteCount);
+    }
+
+    /**
+     * Determine if population needs rebalancing
+     * Returns { shouldSpawn: boolean, recommendedRole: string }
+     */
+    evaluatePopulation() {
+        const pm = this.populationManager;
+        const now = Date.now();
+
+        // Check cooldown
+        if (now - pm.lastSpawnTime < pm.spawnCooldown) {
+            return { shouldSpawn: false, recommendedRole: null };
+        }
+
+        // Count current population
+        const currentPopulation = this.personalBrains.size;
+
+        // Check if below minimum (urgent spawn)
+        if (currentPopulation < pm.minPopulation) {
+            console.log(`[POPULATION] Below minimum (${currentPopulation}/${pm.minPopulation}) - urgent spawn needed`);
+            pm.lastSpawnTime = now;
+            return { shouldSpawn: true, recommendedRole: this.selectRoleForSpawn(), urgent: true };
+        }
+
+        // Check if below target (gradual spawn)
+        if (currentPopulation < pm.targetPopulation) {
+            pm.lastSpawnTime = now;
+            return { shouldSpawn: true, recommendedRole: this.selectRoleForSpawn(), urgent: false };
+        }
+
+        // Check if above maximum (need culling - but don't auto-kill, just don't spawn)
+        if (currentPopulation >= pm.maxPopulation) {
+            console.log(`[POPULATION] At maximum capacity (${currentPopulation}/${pm.maxPopulation})`);
+            return { shouldSpawn: false, recommendedRole: null };
+        }
+
+        return { shouldSpawn: false, recommendedRole: null };
+    }
+
+    /**
+     * Select role for new spawn based on current distribution
+     */
+    selectRoleForSpawn() {
+        const pm = this.populationManager;
+
+        // Count current roles
+        const currentRoles = new Map();
+        for (const [agentName, brain] of this.personalBrains) {
+            // Extract role from brain name (format: ROLE_AgentName)
+            const parts = brain.name.split('_');
+            const role = parts[0];
+            currentRoles.set(role, (currentRoles.get(role) || 0) + 1);
+        }
+
+        const totalAgents = this.personalBrains.size;
+
+        // Find most underrepresented role
+        let bestRole = 'MINING';  // Default
+        let maxDeficit = -Infinity;
+
+        for (const [role, targetPercent] of Object.entries(pm.roleDistribution)) {
+            const currentCount = currentRoles.get(role) || 0;
+            const currentPercent = totalAgents > 0 ? currentCount / totalAgents : 0;
+            const deficit = targetPercent - currentPercent;
+
+            if (deficit > maxDeficit) {
+                maxDeficit = deficit;
+                bestRole = role;
+            }
+        }
+
+        return bestRole;
+    }
+
+    /**
+     * Log generation statistics
+     */
+    logGenerationStats() {
+        const pm = this.populationManager;
+
+        if (pm.agentFitness.size === 0) return;
+
+        const fitnessValues = Array.from(pm.agentFitness.values());
+        const avgFitness = fitnessValues.reduce((sum, f) => sum + f, 0) / fitnessValues.length;
+        const maxFitness = Math.max(...fitnessValues);
+        const minFitness = Math.min(...fitnessValues);
+
+        const generationStat = {
+            generation: pm.currentGeneration,
+            avgFitness: avgFitness.toFixed(2),
+            maxFitness: maxFitness.toFixed(2),
+            minFitness: minFitness.toFixed(2),
+            population: pm.agentFitness.size,
+            timestamp: Date.now()
+        };
+
+        pm.generationStats.push(generationStat);
+
+        // Keep only last 20 generations
+        if (pm.generationStats.length > 20) {
+            pm.generationStats.shift();
+        }
+
+        console.log(`[POPULATION] Generation ${pm.currentGeneration} Stats:`);
+        console.log(`[POPULATION]   Population: ${pm.agentFitness.size}`);
+        console.log(`[POPULATION]   Avg Fitness: ${avgFitness.toFixed(2)}`);
+        console.log(`[POPULATION]   Max Fitness: ${maxFitness.toFixed(2)}`);
+        console.log(`[POPULATION]   Min Fitness: ${minFitness.toFixed(2)}`);
+
+        // Show elite agents
+        const elites = this.getEliteAgents();
+        console.log(`[POPULATION]   Elite Agents:`);
+        for (const [name, fitness] of elites) {
+            console.log(`[POPULATION]     - ${name}: ${fitness.toFixed(2)}`);
         }
     }
 
