@@ -10,6 +10,7 @@ const { ExperienceReplayBuffer, EpisodeBuffer } = require('./ml_experience_repla
 const { getGoalManager } = require('./ml_hierarchical_goals');
 const { getSubSkillsSystem } = require('./ml_zomboid_skills');
 const { getMoodlesSystem } = require('./ml_zomboid_moodles');
+const { getSharedBrain } = require('./ml_brain_sqlite');
 const fs = require('fs');
 const path = require('path');
 
@@ -20,8 +21,19 @@ class MLTrainer {
         this.actionSpace = new ActionSpace();
         this.goalManager = getGoalManager(); // Hierarchical goal system
 
-        // Agent brains (one per agent type)
-        this.brains = new Map();  // agentType -> AgentBrain
+        // HIERARCHICAL BRAIN ARCHITECTURE
+        // 1. Shared collective brain - ONE neural network + SQLite used by ALL agents
+        // 2. Personal specialization brains - Each agent gets their own neural network
+        this.sharedNeuralBrain = null;         // Single shared TensorFlow brain
+        this.personalBrains = new Map();       // Map of agentName -> personal TensorFlow brain
+        this.sharedSQLiteBrain = getSharedBrain();  // SQLite collective knowledge database
+
+        // Initialize SQLite brain asynchronously
+        this.sharedSQLiteBrain.initialize().then(() => {
+            console.log('[ML TRAINER] ✓ SQLite Shared Brain initialized');
+        }).catch(err => {
+            console.error('[ML TRAINER] Failed to initialize SQLite brain:', err);
+        });
 
         // Experience buffers
         this.globalReplayBuffer = new ExperienceReplayBuffer(50000);
@@ -57,30 +69,34 @@ class MLTrainer {
             successRate: 0
         };
 
-        console.log('[ML TRAINER] Initialized ML Training System');
+        console.log('[ML TRAINER] Initialized HIERARCHICAL ML Training System');
+        console.log('[ML TRAINER] Architecture: Shared Collective + Personal Specialization');
+        console.log('[ML TRAINER]   ├─ Shared TensorFlow Network (general knowledge)');
+        console.log('[ML TRAINER]   ├─ SQLite Database (collective strategies)');
+        console.log('[ML TRAINER]   └─ Personal TensorFlow Networks (individual expertise)');
         console.log(`[ML TRAINER] Action Space Size: ${this.actionSpace.ACTION_COUNT}`);
         console.log(`[ML TRAINER] State Vector Size: ${this.stateEncoder.STATE_SIZE}`);
     }
 
     /**
-     * Get or create a brain for an agent type
+     * Get the shared brain (all agents use ONE neural network)
      */
     getBrain(agentType) {
-        if (!this.brains.has(agentType)) {
-            const brain = new AgentBrain(
+        // SHARED BRAIN: All agents share the same neural network
+        if (!this.sharedNeuralBrain) {
+            this.sharedNeuralBrain = new AgentBrain(
                 this.stateEncoder.STATE_SIZE,
                 this.actionSpace.ACTION_COUNT,
-                agentType
+                'SHARED_COLLECTIVE'  // Single unified brain
             );
 
             // Try to load existing model
-            brain.loadModel(this.modelPath);
+            this.sharedNeuralBrain.loadModel(this.modelPath);
 
-            this.brains.set(agentType, brain);
-            console.log(`[ML TRAINER] Created brain for ${agentType}`);
+            console.log(`[ML TRAINER] 🧠 Created SHARED NEURAL BRAIN for all agents`);
         }
 
-        return this.brains.get(agentType);
+        return this.sharedNeuralBrain;
     }
 
     /**
@@ -89,28 +105,40 @@ class MLTrainer {
      * @param {AgentBrain} parentBrain - Optional parent brain for genetic inheritance
      */
     async initializeAgent(bot, parentBrain = null) {
-        let brain;
+        // HIERARCHICAL BRAIN ARCHITECTURE:
+        // 1. Shared collective brain (used by ALL agents)
+        // 2. Personal specialization brain (unique to this agent)
 
-        // GENETIC EVOLUTION: Clone parent brain if provided
+        // Get shared brain (all agents use the same one)
+        const sharedBrain = this.getBrain(bot.agentType);
+
+        // Create personal specialization brain
+        let personalBrain;
+
+        // GENETIC EVOLUTION: Clone parent's personal brain if provided
         if (parentBrain && bot.generation > 1) {
-            console.log(`[ML TRAINER] 🧬 Cloning parent brain for ${bot.agentName} (Gen ${bot.generation})`);
+            console.log(`[ML TRAINER] 🧬 Cloning parent's personal brain for ${bot.agentName} (Gen ${bot.generation})`);
             try {
                 // Clone with 10% mutation rate and 5% mutation strength
-                brain = await parentBrain.clone(0.10, 0.05);
-
-                // Register this as the brain for this agent type
-                // (so multiple agents can share it, but offspring get evolved version)
-                this.brains.set(bot.agentType + '_' + bot.agentName, brain);
-
-                console.log(`[ML TRAINER] ✓ Brain inherited with mutations (${brain.trainingSteps} training steps)`);
+                personalBrain = await parentBrain.clone(0.10, 0.05);
+                console.log(`[ML TRAINER] ✓ Personal brain inherited with mutations (${personalBrain.trainingSteps} training steps)`);
             } catch (error) {
                 console.error(`[ML TRAINER] Failed to clone brain: ${error.message}`);
-                console.log(`[ML TRAINER] Falling back to fresh brain`);
-                brain = this.getBrain(bot.agentType);
+                console.log(`[ML TRAINER] Creating fresh personal brain`);
+                personalBrain = new AgentBrain(
+                    this.stateEncoder.STATE_SIZE,
+                    this.actionSpace.ACTION_COUNT,
+                    `${bot.agentType}_${bot.agentName}`
+                );
             }
         } else {
-            // Get fresh brain (shared across all agents of this type)
-            brain = this.getBrain(bot.agentType);
+            // Create new personal specialization brain for this agent
+            personalBrain = new AgentBrain(
+                this.stateEncoder.STATE_SIZE,
+                this.actionSpace.ACTION_COUNT,
+                `${bot.agentType}_${bot.agentName}`
+            );
+            console.log(`[ML TRAINER] 🎯 Created personal specialization brain for ${bot.agentName}`);
         }
 
         const episodeBuffer = new EpisodeBuffer();
@@ -118,8 +146,17 @@ class MLTrainer {
 
         this.episodeBuffers.set(bot.agentName, episodeBuffer);
 
-        // Store ML components on bot
-        bot.mlBrain = brain;
+        // Store BOTH brains on bot
+        bot.mlSharedBrain = sharedBrain;      // Collective knowledge
+        bot.mlPersonalBrain = personalBrain;  // Personal specialization
+        bot.mlBrain = personalBrain;          // Default to personal brain for compatibility
+
+        // Track personal brains for training
+        if (!this.personalBrains) {
+            this.personalBrains = new Map();
+        }
+        this.personalBrains.set(bot.agentName, personalBrain);
+
         bot.mlEpisodeBuffer = episodeBuffer;
         bot.mlLastState = null;
         bot.mlLastAction = null;
@@ -131,8 +168,9 @@ class MLTrainer {
         bot.currentGoal = null; // Will be set on first step
         bot.lastGoalUpdate = 0;
 
-        const inheritanceMsg = parentBrain ? ' [INHERITED]' : '';
+        const inheritanceMsg = parentBrain ? ' [INHERITED]' : ' [NEW]';
         console.log(`[ML TRAINER] Initialized ML for ${bot.agentName} (${bot.agentType})${inheritanceMsg}`);
+        console.log(`[ML TRAINER]   └─ Shared brain (collective) + Personal brain (specialization)`);
     }
 
     /**
@@ -158,6 +196,9 @@ class MLTrainer {
             // Encode current state
             const state = this.stateEncoder.encodeState(bot);
 
+            // Get context for SharedBrain (simplified context string)
+            const context = this.getContextString(bot);
+
             // Select action using brain (with exploration and goal bias)
             const useRandom = Math.random() < this.config.explorationRate;
             let action, logProb, value;
@@ -171,12 +212,47 @@ class MLTrainer {
                 value = actionData.value;
                 actionProbs = actionData.actionProbs;
             } else {
-                // Use policy network
-                const actionData = bot.mlBrain.selectAction(state, true);
-                action = actionData.action;
-                logProb = actionData.logProb;
-                value = actionData.value;
-                actionProbs = actionData.actionProbs;
+                // HIERARCHICAL BRAIN SYSTEM: Blend shared knowledge + personal specialization
+
+                // 1. Get SQLite collective recommendations
+                const allActions = [];
+                for (let i = 0; i < this.actionSpace.ACTION_COUNT; i++) {
+                    allActions.push(this.actionSpace.getActionName(i));
+                }
+                const sqliteRecommendation = await this.sharedSQLiteBrain.getBestAction(context, allActions);
+                const sqliteActionId = this.actionSpace.getActionId(sqliteRecommendation);
+
+                // 2. Get shared neural network prediction (general knowledge)
+                const sharedActionData = bot.mlSharedBrain.selectAction(state, true);
+
+                // 3. Get personal neural network prediction (specialization)
+                const personalActionData = bot.mlPersonalBrain.selectAction(state, true);
+
+                // 4. BLEND ALL THREE SOURCES:
+                // - SQLite collective: 40% weight (proven strategies)
+                // - Shared network: 30% weight (general patterns)
+                // - Personal network: 30% weight (individual expertise)
+
+                const rand = Math.random();
+                if (sqliteActionId !== null && rand < 0.4) {
+                    // Use SQLite collective knowledge
+                    action = sqliteActionId;
+                    logProb = personalActionData.logProb;  // Use personal for training
+                    value = personalActionData.value;
+                    actionProbs = personalActionData.actionProbs;
+                } else if (rand < 0.7) {
+                    // Use shared brain (general knowledge)
+                    action = sharedActionData.action;
+                    logProb = sharedActionData.logProb;
+                    value = sharedActionData.value;
+                    actionProbs = sharedActionData.actionProbs;
+                } else {
+                    // Use personal brain (specialization)
+                    action = personalActionData.action;
+                    logProb = personalActionData.logProb;
+                    value = personalActionData.value;
+                    actionProbs = personalActionData.actionProbs;
+                }
             }
 
             // Apply goal-based action bias (hierarchical RL)
@@ -232,7 +308,23 @@ class MLTrainer {
                     bot.mlLastLogProb,
                     false  // done (will be set on death)
                 );
+
+                // SHARED BRAIN: Record action result in collective knowledge
+                const lastActionName = this.actionSpace.getActionName(bot.mlLastAction);
+                const lastContext = bot.mlLastContext || context;
+                await this.sharedSQLiteBrain.recordAction(
+                    lastActionName,
+                    lastContext,
+                    actionSuccess && reward > 0,  // success = action worked AND positive reward
+                    reward
+                );
+
+                // Check for skill unlocks based on collective performance
+                await this.checkSkillUnlocks(bot, lastActionName, reward);
             }
+
+            // Store context for next step
+            bot.mlLastContext = context;
 
             // Update last state/action
             bot.mlLastState = state;
@@ -833,37 +925,34 @@ class MLTrainer {
     }
 
     /**
-     * Train all brains using replay buffer
+     * Train shared brain and personal brains using replay buffer
      */
     async trainAllBrains() {
         if (!this.trainingEnabled) return;
         if (this.globalReplayBuffer.size() < this.config.minBufferSize) return;
 
-        console.log(`[ML TRAINER] Training all brains... (Buffer size: ${this.globalReplayBuffer.size()})`);
+        const allExperiences = this.globalReplayBuffer.sample(1000);
+        if (allExperiences.length < 32) return;
 
-        for (const [agentType, brain] of this.brains) {
-            // Get experiences for this agent type
-            const experiences = this.globalReplayBuffer.getExperiencesByType(agentType, 1000);
-            if (experiences.length < 32) continue;
+        console.log(`[ML TRAINER] Training hierarchical brain system... (Buffer size: ${this.globalReplayBuffer.size()})`);
 
-            // Sample batch
-            const batchSize = Math.min(this.config.batchSize, experiences.length);
+        // 1. TRAIN SHARED BRAIN (collective knowledge from all agents)
+        if (this.sharedNeuralBrain) {
+            const batchSize = Math.min(this.config.batchSize, allExperiences.length);
             const batch = [];
             for (let i = 0; i < batchSize; i++) {
-                batch.push(experiences[Math.floor(Math.random() * experiences.length)]);
+                batch.push(allExperiences[Math.floor(Math.random() * allExperiences.length)]);
             }
 
-            // Prepare training data
             const states = batch.map(exp => exp.state);
             const actions = batch.map(exp => exp.action);
-            const rewards = batch.map(exp => exp.reward);
 
             // Calculate returns and advantages
             const returns = [];
             const advantages = [];
             for (let i = 0; i < batch.length; i++) {
-                const value = brain.evaluateState(batch[i].state);
-                const nextValue = batch[i].nextState ? brain.evaluateState(batch[i].nextState) : 0;
+                const value = this.sharedNeuralBrain.evaluateState(batch[i].state);
+                const nextValue = batch[i].nextState ? this.sharedNeuralBrain.evaluateState(batch[i].nextState) : 0;
                 const tdTarget = batch[i].reward + 0.99 * nextValue * (batch[i].done ? 0 : 1);
                 const advantage = tdTarget - value;
 
@@ -871,30 +960,79 @@ class MLTrainer {
                 advantages.push(advantage);
             }
 
-            // Get old log probs (simplified - use current policy)
             const oldLogProbs = states.map((state, i) => {
-                const actionData = brain.selectAction(state, false);
+                const actionData = this.sharedNeuralBrain.selectAction(state, false);
                 return actionData.logProb;
             });
 
-            // Train
             try {
-                await brain.trainPPO(states, actions, oldLogProbs, advantages, returns, 2);
+                await this.sharedNeuralBrain.trainPPO(states, actions, oldLogProbs, advantages, returns, 2);
+                console.log(`[ML TRAINER] ✓ Shared brain trained (collective knowledge)`);
             } catch (error) {
-                console.error(`[ML TRAINER] Training error for ${agentType}: ${error.message}`);
+                console.error(`[ML TRAINER] Shared brain training error: ${error.message}`);
+            }
+        }
+
+        // 2. TRAIN PERSONAL BRAINS (individual specialization)
+        if (this.personalBrains && this.personalBrains.size > 0) {
+            let trainedCount = 0;
+            for (const [agentName, personalBrain] of this.personalBrains) {
+                // Get experiences for this specific agent
+                const agentExperiences = allExperiences.filter(exp =>
+                    exp.agentName === agentName || !exp.agentName  // Include generic experiences too
+                );
+
+                if (agentExperiences.length < 16) continue;  // Need at least 16 experiences
+
+                const batchSize = Math.min(32, agentExperiences.length);
+                const batch = [];
+                for (let i = 0; i < batchSize; i++) {
+                    batch.push(agentExperiences[Math.floor(Math.random() * agentExperiences.length)]);
+                }
+
+                const states = batch.map(exp => exp.state);
+                const actions = batch.map(exp => exp.action);
+
+                const returns = [];
+                const advantages = [];
+                for (let i = 0; i < batch.length; i++) {
+                    const value = personalBrain.evaluateState(batch[i].state);
+                    const nextValue = batch[i].nextState ? personalBrain.evaluateState(batch[i].nextState) : 0;
+                    const tdTarget = batch[i].reward + 0.99 * nextValue * (batch[i].done ? 0 : 1);
+                    const advantage = tdTarget - value;
+
+                    returns.push(tdTarget);
+                    advantages.push(advantage);
+                }
+
+                const oldLogProbs = states.map((state, i) => {
+                    const actionData = personalBrain.selectAction(state, false);
+                    return actionData.logProb;
+                });
+
+                try {
+                    await personalBrain.trainPPO(states, actions, oldLogProbs, advantages, returns, 1);
+                    trainedCount++;
+                } catch (error) {
+                    // Skip this agent's training
+                }
+            }
+
+            if (trainedCount > 0) {
+                console.log(`[ML TRAINER] ✓ Trained ${trainedCount} personal brains (specialization)`);
             }
         }
     }
 
     /**
-     * Save all brain models
+     * Save shared brain model
      */
     async saveAllModels() {
-        console.log('[ML TRAINER] Saving all models...');
-        for (const [agentType, brain] of this.brains) {
-            await brain.saveModel(this.modelPath);
-        }
-        console.log(`[ML TRAINER] Saved ${this.brains.size} models`);
+        if (!this.sharedNeuralBrain) return;
+
+        console.log('[ML TRAINER] Saving SHARED BRAIN model...');
+        await this.sharedNeuralBrain.saveModel(this.modelPath);
+        console.log(`[ML TRAINER] ✓ Shared brain model saved`);
     }
 
     /**
@@ -906,9 +1044,85 @@ class MLTrainer {
             totalSteps: this.totalSteps,
             explorationRate: this.config.explorationRate.toFixed(4),
             bufferSize: this.globalReplayBuffer.size(),
-            activeBrains: this.brains.size,
-            replayBufferStats: this.globalReplayBuffer.getStats()
+            sharedBrainActive: this.sharedNeuralBrain !== null,
+            personalBrainsCount: this.personalBrains ? this.personalBrains.size : 0,
+            sqliteBrainActive: this.sharedSQLiteBrain.initialized,
+            replayBufferStats: this.globalReplayBuffer.getStats(),
+            architecture: 'Hierarchical: Shared Collective + Personal Specialization'
         };
+    }
+
+    /**
+     * Generate context string for SharedBrain queries
+     */
+    getContextString(bot) {
+        const parts = [];
+
+        // Health status
+        if (bot.health < 10) parts.push('low_health');
+        else if (bot.health > 18) parts.push('healthy');
+
+        // Food status
+        if (bot.food < 10) parts.push('hungry');
+        else if (bot.food > 18) parts.push('well_fed');
+
+        // Combat context
+        const nearbyHostiles = Object.values(bot.entities).filter(e =>
+            e.type === 'mob' &&
+            e.position.distanceTo(bot.entity.position) < 16 &&
+            ['zombie', 'skeleton', 'creeper', 'spider', 'enderman'].includes(e.name)
+        );
+        if (nearbyHostiles.length > 0) parts.push('combat');
+
+        // Time of day
+        const time = bot.time.timeOfDay;
+        if (time < 6000) parts.push('day');
+        else if (time < 12000) parts.push('afternoon');
+        else if (time < 18000) parts.push('night');
+        else parts.push('midnight');
+
+        // Current goal
+        if (bot.currentGoal) {
+            parts.push(bot.currentGoal.name.toLowerCase().replace(/ /g, '_'));
+        }
+
+        return parts.join('_') || 'general';
+    }
+
+    /**
+     * Check for skill unlocks based on collective performance
+     */
+    async checkSkillUnlocks(bot, actionName, reward) {
+        // Only check positive rewards
+        if (reward <= 0) return;
+
+        // Define skill unlock thresholds (simplified for now)
+        const skillUnlockConditions = {
+            'mining_expert': { actions: ['dig_forward', 'dig_down', 'mine_nearest_ore'], threshold: 50 },
+            'combat_veteran': { actions: ['attack_nearest', 'fight_zombie', 'fight_skeleton'], threshold: 30 },
+            'builder': { actions: ['place_block', 'build_structure', 'build_wall'], threshold: 40 },
+            'explorer': { actions: ['move_forward', 'random_walk', 'explore_area'], threshold: 100 },
+            'farmer': { actions: ['collect_seeds', 'plant_crops', 'harvest_crops'], threshold: 20 }
+        };
+
+        // Check each skill
+        for (const [skillName, condition] of Object.entries(skillUnlockConditions)) {
+            if (condition.actions.includes(actionName)) {
+                // Check if skill already unlocked
+                const hasSkill = await this.sharedSQLiteBrain.hasSkillAccess(skillName);
+                if (!hasSkill) {
+                    // Count successful uses of this action type from collective experience
+                    // For now, unlock randomly with small probability (will improve with better tracking)
+                    if (Math.random() < 0.01) {  // 1% chance per successful action
+                        await this.sharedSQLiteBrain.unlockSkill(
+                            skillName,
+                            bot.agentName,
+                            `Unlocked through ${actionName} mastery`
+                        );
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -932,12 +1146,27 @@ class MLTrainer {
     /**
      * Clean up resources
      */
-    dispose() {
-        for (const brain of this.brains.values()) {
-            brain.dispose();
+    async dispose() {
+        // Dispose shared TensorFlow brain
+        if (this.sharedNeuralBrain) {
+            this.sharedNeuralBrain.dispose();
+            this.sharedNeuralBrain = null;
         }
-        this.brains.clear();
-        console.log('[ML TRAINER] Disposed all ML resources');
+
+        // Dispose all personal brains
+        if (this.personalBrains) {
+            for (const [agentName, brain] of this.personalBrains) {
+                brain.dispose();
+            }
+            this.personalBrains.clear();
+        }
+
+        // Close SQLite brain
+        if (this.sharedSQLiteBrain) {
+            await this.sharedSQLiteBrain.close();
+        }
+
+        console.log('[ML TRAINER] Disposed all ML resources (shared + personal brains + SQLite)');
     }
 
     // ===== REMOTE WORKER METHODS =====

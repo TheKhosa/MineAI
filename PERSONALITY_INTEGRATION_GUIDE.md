@@ -1,8 +1,5 @@
 # Personality System Integration Guide
 
-This document outlines all the integration points for the agent personality system in `intelligent_village.js`.
-
----
 
 ## ✅ Completed Integration Points
 
@@ -13,7 +10,6 @@ const { getPersonalitySystem } = require('./agent_personality_system');
 let personalitySystem = null;  // Will be initialized after server starts
 ```
 
-### 2. System Initialization (Line 3682-3694)
 ```javascript
 // Initialize Personality System
 console.log('\n' + '='.repeat(70));

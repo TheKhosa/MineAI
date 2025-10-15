@@ -34,6 +34,9 @@
  *   await chatLLM.initialize();
  */
 
+const fs = require('fs');
+const path = require('path');
+
 class AgentChatLLM {
     constructor(backend = 'mock') {
         this.backend = backend;
@@ -50,10 +53,10 @@ class AgentChatLLM {
 
         // Model configuration
         this.config = {
-            maxTokens: 60, // Enough for 1-2 sentences
-            temperature: 0.8, // Higher for more creative/varied responses
-            topP: 0.92,
-            repetitionPenalty: 1.3 // Stronger penalty for repetition
+            maxTokens: 80, // Enough for 1-3 sentences
+            temperature: 1.1, // High creativity for varied, personality-driven responses
+            topP: 0.95,
+            repetitionPenalty: 1.5 // Strong penalty to avoid repeating phrases
         };
     }
 
@@ -115,35 +118,238 @@ class AgentChatLLM {
     }
 
     /**
-     * Initialize Transformers.js backend
+     * Recursively delete directory with retry logic (Windows-compatible)
      */
-    async initializeTransformers() {
-        console.log('[CHAT LLM] Loading Qwen2.5-0.5B-Instruct model (first run will download ~120MB)...');
-        const { pipeline, env } = await import('@huggingface/transformers');
+    deleteFolderRecursive(directoryPath) {
+        if (!fs.existsSync(directoryPath)) {
+            return true;
+        }
 
-        // Force use of local models only (no web workers)
-        env.allowLocalModels = true;
-        env.allowRemoteModels = true;
+        try {
+            // First pass: delete all files
+            const files = fs.readdirSync(directoryPath);
 
-        // Use Qwen2.5-0.5B-Instruct - small, fast, and efficient
-        console.log('[CHAT LLM] Downloading Qwen2.5-0.5B-Instruct from HuggingFace...');
-        console.log('[CHAT LLM] This may take 1-2 minutes on first run...');
+            for (const file of files) {
+                const curPath = path.join(directoryPath, file);
 
-        this.model = await pipeline(
-            'text-generation',
-            'onnx-community/Qwen2.5-0.5B-Instruct',
-            {
-                dtype: 'q8', // 8-bit quantization for smaller size
-                progress_callback: (progress) => {
-                    if (progress.status === 'progress') {
-                        const percent = ((progress.loaded / progress.total) * 100).toFixed(1);
-                        console.log(`[CHAT LLM] Download progress: ${percent}% (${progress.file})`);
+                if (fs.lstatSync(curPath).isDirectory()) {
+                    // Recursive delete subdirectory
+                    this.deleteFolderRecursive(curPath);
+                } else {
+                    // Delete file with retry
+                    let attempts = 0;
+                    const maxAttempts = 3;
+
+                    while (attempts < maxAttempts) {
+                        try {
+                            fs.unlinkSync(curPath);
+                            break;
+                        } catch (err) {
+                            attempts++;
+                            if (attempts >= maxAttempts) {
+                                console.warn(`[CHAT LLM] Could not delete file after ${maxAttempts} attempts: ${curPath}`);
+                            } else {
+                                // Wait briefly before retry
+                                const wait = new Promise(resolve => setTimeout(resolve, 100 * attempts));
+                                // Synchronous wait (blocking)
+                                for (let i = 0; i < 100 * attempts; i++) { /* busy wait */ }
+                            }
+                        }
                     }
                 }
             }
-        );
 
-        console.log('[CHAT LLM] Qwen2.5-0.5B-Instruct loaded and ready for agent conversations');
+            // Second pass: try to delete the directory itself
+            let attempts = 0;
+            const maxAttempts = 3;
+
+            while (attempts < maxAttempts) {
+                try {
+                    fs.rmdirSync(directoryPath);
+                    return true;
+                } catch (err) {
+                    attempts++;
+                    if (attempts >= maxAttempts) {
+                        console.warn(`[CHAT LLM] Could not delete directory after ${maxAttempts} attempts: ${directoryPath}`);
+                        return false;
+                    }
+                    // Wait briefly before retry
+                    for (let i = 0; i < 100 * attempts; i++) { /* busy wait */ }
+                }
+            }
+        } catch (error) {
+            console.error(`[CHAT LLM] Error during recursive delete: ${error.message}`);
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Clear transformers.js cache for a specific model
+     */
+    clearModelCache(modelName) {
+        try {
+            const cacheDir = path.join(
+                __dirname,
+                'node_modules',
+                '@huggingface',
+                'transformers',
+                '.cache',
+                modelName.replace('/', path.sep)
+            );
+
+            if (fs.existsSync(cacheDir)) {
+                console.log(`[CHAT LLM] Clearing corrupted cache at: ${cacheDir}`);
+
+                // Strategy 1: Try to rename the corrupted directory (works even with locked files)
+                const timestamp = Date.now();
+                const corruptedDir = `${cacheDir}_corrupted_${timestamp}`;
+
+                try {
+                    fs.renameSync(cacheDir, corruptedDir);
+                    console.log(`[CHAT LLM] ✓ Renamed corrupted cache to: ${path.basename(corruptedDir)}`);
+                    console.log('[CHAT LLM] ✓ Fresh cache will be downloaded automatically');
+                    console.log(`[CHAT LLM] Note: You can manually delete "${corruptedDir}" later`);
+                    return true;
+                } catch (renameError) {
+                    console.warn(`[CHAT LLM] Could not rename cache directory: ${renameError.message}`);
+                }
+
+                // Strategy 2: Try JavaScript recursive delete
+                console.log('[CHAT LLM] Trying to delete cache directory...');
+                let success = this.deleteFolderRecursive(cacheDir);
+
+                // Strategy 3: If that fails on Windows, try PowerShell as fallback
+                if (!success && process.platform === 'win32') {
+                    console.log('[CHAT LLM] Trying PowerShell force delete...');
+
+                    try {
+                        const { execSync } = require('child_process');
+                        execSync(`powershell -Command "Remove-Item -Path '${cacheDir}' -Recurse -Force"`, {
+                            stdio: 'pipe',
+                            timeout: 30000
+                        });
+
+                        // Check if directory was deleted
+                        success = !fs.existsSync(cacheDir);
+
+                        if (success) {
+                            console.log('[CHAT LLM] ✓ Cache cleared successfully using PowerShell');
+                        }
+                    } catch (psError) {
+                        // PowerShell failed too
+                    }
+                }
+
+                if (success) {
+                    console.log('[CHAT LLM] ✓ Cache cleared successfully');
+                    return true;
+                } else {
+                    console.error('[CHAT LLM] ✗ Could not delete cache directory (files are locked)');
+                    console.log('[CHAT LLM] WORKAROUND: Please stop any other Node.js processes');
+                    console.log('[CHAT LLM] Then run one of these commands:');
+                    console.log(`[CHAT LLM]   PowerShell: Remove-Item "${cacheDir}" -Recurse -Force`);
+                    console.log(`[CHAT LLM]   CMD:        rmdir /s /q "${cacheDir}"`);
+                    return false;
+                }
+            } else {
+                console.log('[CHAT LLM] Cache directory not found, nothing to clear');
+                return false;
+            }
+        } catch (error) {
+            console.error(`[CHAT LLM] Failed to clear cache: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Initialize Transformers.js backend
+     */
+    async initializeTransformers() {
+        const config = require('./config');
+        const modelName = config.llm.transformers.model;
+        const dtype = config.llm.transformers.dtype || 'q8';
+
+        console.log(`[CHAT LLM] Loading ${modelName} (first run will download model)...`);
+
+        try {
+            const { pipeline, env } = await import('@huggingface/transformers');
+
+            // Force use of local models only (no web workers)
+            env.allowLocalModels = true;
+            env.allowRemoteModels = true;
+
+            console.log(`[CHAT LLM] Downloading ${modelName} from HuggingFace...`);
+            console.log('[CHAT LLM] This may take a few minutes on first run...');
+
+            this.model = await pipeline(
+                'text-generation',
+                modelName,
+                {
+                    dtype: dtype, // Use config quantization
+                    progress_callback: (progress) => {
+                        if (progress.status === 'progress') {
+                            const percent = ((progress.loaded / progress.total) * 100).toFixed(1);
+                            console.log(`[CHAT LLM] Download progress: ${percent}% (${progress.file})`);
+                        }
+                    }
+                }
+            );
+
+            // Also update config from file
+            this.config.maxTokens = config.llm.transformers.maxTokens || 80;
+            this.config.temperature = config.llm.transformers.temperature || 1.1;
+            this.config.topP = config.llm.transformers.topP || 0.95;
+            this.config.repetitionPenalty = config.llm.transformers.repetitionPenalty || 1.5;
+
+            console.log(`[CHAT LLM] ${modelName} loaded and ready for agent conversations`);
+        } catch (error) {
+            // Check if it's a Protobuf parsing error (corrupted cache)
+            if (error.message && error.message.includes('Protobuf parsing failed')) {
+                console.error('[CHAT LLM] ❌ Protobuf parsing error detected - corrupted cache!');
+                console.log('[CHAT LLM] Attempting to clear cache and retry...');
+
+                // Clear the corrupted cache
+                const cacheCleared = this.clearModelCache(modelName);
+
+                if (cacheCleared) {
+                    console.log('[CHAT LLM] Retrying model download with fresh cache...');
+
+                    // Retry the initialization
+                    const { pipeline, env } = await import('@huggingface/transformers');
+                    env.allowLocalModels = true;
+                    env.allowRemoteModels = true;
+
+                    this.model = await pipeline(
+                        'text-generation',
+                        modelName,
+                        {
+                            dtype: dtype,
+                            progress_callback: (progress) => {
+                                if (progress.status === 'progress') {
+                                    const percent = ((progress.loaded / progress.total) * 100).toFixed(1);
+                                    console.log(`[CHAT LLM] Download progress: ${percent}% (${progress.file})`);
+                                }
+                            }
+                        }
+                    );
+
+                    // Update config
+                    this.config.maxTokens = config.llm.transformers.maxTokens || 80;
+                    this.config.temperature = config.llm.transformers.temperature || 1.1;
+                    this.config.topP = config.llm.transformers.topP || 0.95;
+                    this.config.repetitionPenalty = config.llm.transformers.repetitionPenalty || 1.5;
+
+                    console.log(`[CHAT LLM] ✓ ${modelName} loaded successfully after cache clear!`);
+                } else {
+                    throw new Error('Failed to clear cache and retry. Please manually delete the cache directory.');
+                }
+            } else {
+                // Re-throw other errors
+                throw error;
+            }
+        }
     }
 
     /**
@@ -205,17 +411,18 @@ class AgentChatLLM {
      */
     async initializeLlamaCpp() {
         try {
+            // Step 1: Auto-download model if needed
+            console.log('[CHAT LLM] Checking for UserLM-8b model...');
+            const { getDownloader } = require('./huggingface_downloader');
+            const downloader = getDownloader();
+            const modelPath = await downloader.ensureModelReady();
+            console.log('[CHAT LLM] ✓ Model ready at:', modelPath);
+
+            // Step 2: Install node-llama-cpp if needed
+            console.log('[CHAT LLM] Loading node-llama-cpp...');
             const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
-            const path = require('path');
 
-            // Check if model file exists
-            const modelPath = path.join(__dirname, 'ml_models', 'UserLM-8b-Q4_K_M.gguf');
-            const fs = require('fs');
-
-            if (!fs.existsSync(modelPath)) {
-                throw new Error(`Model file not found: ${modelPath}\nDownload from: https://huggingface.co/mradermacher/UserLM-8b-GGUF`);
-            }
-
+            // Step 3: Load the model
             console.log('[CHAT LLM] Loading UserLM-8b from GGUF...');
             const llama = await getLlama();
             const model = await llama.loadModel({
@@ -231,9 +438,9 @@ class AgentChatLLM {
                 createSession: () => new LlamaChatSession({ context })
             };
 
-            console.log('[CHAT LLM] node-llama-cpp backend ready with UserLM-8b');
+            console.log('[CHAT LLM] ✓ node-llama-cpp backend ready with UserLM-8b');
         } catch (error) {
-            if (error.message.includes('Cannot find package')) {
+            if (error.message.includes('Cannot find package') || error.message.includes('Cannot find module')) {
                 throw new Error('node-llama-cpp not installed. Run: npm install node-llama-cpp');
             } else {
                 throw error;
@@ -350,18 +557,57 @@ class AgentChatLLM {
 
         // Build context description
         let situation = '';
-        if (context === 'nearby') {
-            situation = 'You just noticed them nearby and want to greet them.';
+        if (context === 'player_conversation') {
+            // RESPONSIVE CONVERSATION: Agent is responding to what someone said
+            const messageText = listener.message || 'something';
+            situation = `${listener.name} said: "${messageText}"`;
+
+            // Analyze what was said and give context for response
+            const msg = messageText.toLowerCase();
+            if (msg.includes('hey') || msg.includes('hello') || msg.includes('hi')) {
+                situation += '\nThey greeted you. Greet them back and ask how they are or what they are doing.';
+            } else if (msg.includes('how are') || msg.includes('how\'s it')) {
+                situation += '\nThey asked how you are. Tell them how you are doing and maybe ask about their tasks or needs.';
+            } else if (msg.includes('help') || msg.includes('assist')) {
+                situation += '\nThey need help. Offer to help or ask what they need.';
+            } else if (msg.includes('trade') || msg.includes('resources')) {
+                situation += '\nThey mentioned trading. Discuss what resources you have or need.';
+            } else {
+                situation += '\nRespond naturally to what they said. You can discuss tasks, needs, or offer cooperation.';
+            }
+        } else if (context === 'nearby') {
+            situation = 'You just noticed them nearby. Greet them and ask how they are or what they are working on.';
+        } else if (context === 'introduction') {
+            situation = 'You just joined the village. Introduce yourself briefly and express interest in working together.';
+        } else if (context === 'farewell') {
+            situation = 'You are about to leave/die. Say goodbye to your friends and thank them.';
         } else if (context === 'trading') {
-            situation = 'You want to discuss trading resources.';
+            situation = 'You want to discuss trading resources. Mention what you have or need.';
         } else if (context === 'danger') {
-            situation = 'There is danger nearby and you need to warn them.';
+            situation = 'There is danger nearby. Warn them and suggest staying together for safety.';
         } else if (context === 'low_health') {
-            situation = 'You are injured and need help.';
+            situation = 'You are injured. Tell them you need food or shelter.';
         } else if (context === 'exploring') {
-            situation = 'You are exploring and want to share what you found.';
+            situation = 'You are exploring. Share what you found and maybe invite them to explore together.';
         } else {
-            situation = 'You want to talk to them.';
+            situation = 'Start a friendly conversation. Ask how they are or what they are doing.';
+        }
+
+        // Add thought process context
+        let thoughtContext = '';
+        if (speaker.thoughtProcess || speaker.lastThought) {
+            thoughtContext = `\n\n=== MY RECENT THOUGHTS ===`;
+            thoughtContext += `\n${speaker.thoughtProcess || speaker.lastThought}`;
+        }
+
+        // Add conversation history context if available
+        let historyContext = '';
+        if (speaker.conversationHistory && speaker.conversationHistory.length > 0) {
+            historyContext = '\n\n=== RECENT CONVERSATION HISTORY ===';
+            speaker.conversationHistory.slice(-5).forEach((msg, index) => {
+                const role = msg.role === 'user' ? listener.name : speaker.name;
+                historyContext += `\n${role}: "${msg.content || msg.message}"`;
+            });
         }
 
         // Add personality/relationship context
@@ -375,7 +621,32 @@ class AgentChatLLM {
             }
         }
 
-        if (speaker.compatibility !== undefined && listener.name) {
+        // Use relationship data from memory system to dictate sentiment
+        if (speaker.relationshipWithListener) {
+            const rel = speaker.relationshipWithListener;
+            const bondStrength = rel.bond_strength || 0;
+            const trustLevel = rel.trust_level || 0;
+            const relationshipType = rel.relationship_type || 'neutral';
+
+            if (bondStrength > 0.7 && trustLevel > 0.7) {
+                personalityContext += ` You are very close friends with ${listener.name}. You trust them completely and enjoy their company.`;
+            } else if (bondStrength > 0.4) {
+                personalityContext += ` You are friends with ${listener.name} and enjoy working together.`;
+            } else if (bondStrength < -0.3) {
+                personalityContext += ` You don't get along well with ${listener.name}. There's tension between you.`;
+            } else if (bondStrength < -0.6) {
+                personalityContext += ` You strongly dislike ${listener.name}. You avoid them when possible.`;
+            }
+
+            // Add cooperation/conflict history
+            if (rel.cooperation_count > 5) {
+                personalityContext += ` You've worked together ${rel.cooperation_count} times successfully.`;
+            }
+            if (rel.conflict_count > 2) {
+                personalityContext += ` You've had ${rel.conflict_count} conflicts in the past.`;
+            }
+        } else if (speaker.compatibility !== undefined && listener.name) {
+            // Fallback to simple compatibility if no relationship data
             if (speaker.compatibility > 0.5) {
                 personalityContext += ` You are good friends with ${listener.name}.`;
             } else if (speaker.compatibility < -0.2) {
@@ -392,13 +663,119 @@ class AgentChatLLM {
 
         const statusStr = speakerStatus.length > 0 ? ` You are ${speakerStatus.join(' and ')}.` : '';
 
-        // Use proper instruct format for Qwen2.5-Instruct
-        return `<|im_start|>system
-You are roleplaying as ${speaker.name}, a Minecraft player. Write natural, casual dialogue as this character would speak. Keep responses to 1-2 short sentences maximum. Be conversational and authentic.<|im_end|>
-<|im_start|>user
-You are ${speaker.name} talking to ${listener.name} in Minecraft. ${situation}${personalityContext}${statusStr}
+        // Add life experiences context for introduction/farewell
+        let experienceContext = '';
+        if (context === 'introduction' || context === 'farewell') {
+            if (speaker.generation) {
+                experienceContext += ` You are generation ${speaker.generation}.`;
+            }
+            if (speaker.survivalTime) {
+                const minutes = Math.floor(speaker.survivalTime / 60);
+                if (minutes > 0) {
+                    experienceContext += ` You have lived for ${minutes} minutes.`;
+                }
+            }
+            if (speaker.recentMemories && speaker.recentMemories.length > 0) {
+                const memoryCount = speaker.recentMemories.length;
+                experienceContext += ` You have ${memoryCount} significant memories.`;
+            }
+            if (speaker.friends && speaker.friends.length > 0) {
+                experienceContext += ` Your friends are: ${speaker.friends.join(', ')}.`;
+            }
+            if (speaker.achievements) {
+                const achievements = [];
+                if (speaker.achievements.diamonds_found > 0) achievements.push(`found ${speaker.achievements.diamonds_found} diamonds`);
+                if (speaker.achievements.mobs_killed > 0) achievements.push(`defeated ${speaker.achievements.mobs_killed} mobs`);
+                if (achievements.length > 0) {
+                    experienceContext += ` You ${achievements.join(' and ')}.`;
+                }
+            }
+        }
 
-What do you say to ${listener.name}? Respond in character with just the dialogue, no quotes or labels.<|im_end|>
+        // Build rich personality description
+        let personalityDesc = '';
+        if (speaker.personality) {
+            // Personality structure has likes/dislikes directly, not under preferences
+            let likesText = '';
+            let dislikesText = '';
+
+            if (speaker.personality.likes) {
+                const likesList = Object.entries(speaker.personality.likes)
+                    .filter(([cat, items]) => items && items.length > 0)
+                    .map(([cat, items]) => items.slice(0, 2).join(', '))
+                    .filter(text => text.length > 0)
+                    .join(', ');
+                if (likesList) likesText = `Things you like: ${likesList}`;
+            }
+
+            if (speaker.personality.dislikes) {
+                const dislikesList = Object.entries(speaker.personality.dislikes)
+                    .filter(([cat, items]) => items && items.length > 0)
+                    .map(([cat, items]) => items.slice(0, 2).join(', '))
+                    .filter(text => text.length > 0)
+                    .join(', ');
+                if (dislikesList) dislikesText = `Things you dislike: ${dislikesList}`;
+            }
+
+            if (likesText) personalityDesc += `\n${likesText}.`;
+            if (dislikesText) personalityDesc += `\n${dislikesText}.`;
+        }
+
+        // Build rich agent profile
+        let agentProfile = `\n\n=== MY PROFILE ===`;
+        agentProfile += `\nName: ${speaker.name}`;
+        if (speaker.type) agentProfile += `\nRole: ${speaker.type}`;
+        if (speaker.generation) agentProfile += ` (Generation ${speaker.generation})`;
+
+        // Current stats
+        agentProfile += `\nHealth: ${speaker.health || 20}/20 | Food: ${speaker.food || 20}/20`;
+
+        // Needs/Mood
+        if (speakerNeeds && speakerNeeds !== 'unknown') {
+            agentProfile += `\nFeeling: ${speakerNeeds}`;
+        }
+
+        // Inventory highlights
+        if (speaker.inventory && Array.isArray(speaker.inventory) && speaker.inventory.length > 0) {
+            const items = speaker.inventory.slice(0, 5).map(i => i.name || i.displayName || 'item').join(', ');
+            agentProfile += `\nCarrying: ${items}`;
+        }
+
+        // Current tasks/goals
+        if (speaker.currentGoal) {
+            agentProfile += `\nCurrent Goal: ${speaker.currentGoal}`;
+        }
+        if (speaker.taskQueue && speaker.taskQueue.length > 0) {
+            const tasks = speaker.taskQueue.slice(0, 3).map(t => t.name || t).join(', ');
+            agentProfile += `\nTasks: ${tasks}`;
+        }
+
+        // Relationships
+        let relationshipContext = '';
+        if (speaker.friends && speaker.friends.length > 0) {
+            relationshipContext += `\n\n=== RELATIONSHIPS ===`;
+            relationshipContext += `\nFriends: ${speaker.friends.slice(0, 3).join(', ')}`;
+        }
+        if (speaker.rivals && speaker.rivals.length > 0) {
+            relationshipContext += `\nRivals: ${speaker.rivals.slice(0, 2).join(', ')}`;
+        }
+
+        // Recent achievements/memories
+        let experienceFull = '';
+        if (speaker.recentAchievements && speaker.recentAchievements.length > 0) {
+            experienceFull += `\n\n=== RECENT ACHIEVEMENTS ===`;
+            speaker.recentAchievements.slice(0, 3).forEach(ach => {
+                experienceFull += `\n• ${ach}`;
+            });
+        }
+
+        // Creative player-perspective prompt with FULL context
+        return `<|im_start|>system
+I'm ${speaker.name}, a ${speaker.type || 'player'} on this Minecraft server.${agentProfile}${personalityDesc}${relationshipContext}${experienceFull}${thoughtContext}${historyContext}<|im_end|>
+<|im_start|>user
+${situation}${personalityContext}${statusStr}${experienceContext}
+
+I'm going to say something creative and natural to ${listener.name}:<|im_end|>
 <|im_start|>assistant
 `;
     }
@@ -434,52 +811,110 @@ What do you say to ${listener.name}? Respond in character with just the dialogue
         // Get the full generated text
         let fullText = result[0].generated_text;
 
-        // Find the assistant's response after the last <|im_start|>assistant marker
-        const assistantMarker = '<|im_start|>assistant';
-        const assistantIndex = fullText.lastIndexOf(assistantMarker);
-
-        let text = '';
-        if (assistantIndex !== -1) {
-            // Extract everything after the assistant marker
-            text = fullText.substring(assistantIndex + assistantMarker.length).trim();
-
-            // Remove ending markers
-            text = text.split('<|im_end|>')[0].trim();
-            text = text.split('<|im_start|>')[0].trim();
-        } else {
-            // Fallback: try to remove the prompt
-            text = fullText.replace(prompt, '').trim();
+        // DEBUG: Log raw output (temporary for debugging)
+        if (Math.random() < 0.1) {  // 10% sample for debugging
+            console.log('[LLM DEBUG] Raw output:', fullText.substring(0, 200));
         }
 
-        // Remove any remaining template tokens
-        text = text.replace(/<\|im_end\|>/g, '');
-        text = text.replace(/<\|im_start\|>/g, '');
-        text = text.replace(/^assistant[\s:]*|^user[\s:]*|^system[\s:]*/gi, '');
+        // STEP 1: Remove the ENTIRE input prompt
+        // The model echoes back everything we sent it, we only want NEW text
+        if (fullText.includes(prompt)) {
+            fullText = fullText.replace(prompt, '').trim();
+        }
 
-        // Remove quotes and common prefixes
-        text = text.replace(/^["']|["']$/g, '');
-        text = text.replace(/^\w+:\s*/, ''); // Remove "Name: " prefix
+        // STEP 2: If there are chat template markers, extract only the assistant's response
+        const assistantMarker = '<|im_start|>assistant';
+        if (fullText.includes(assistantMarker)) {
+            // Find the LAST assistant marker (the actual response)
+            const lastAssistantIndex = fullText.lastIndexOf(assistantMarker);
+            fullText = fullText.substring(lastAssistantIndex + assistantMarker.length).trim();
+        }
 
-        // Clean up and extract sentences
-        text = text.trim();
-        const sentences = text.match(/[^.!?]+[.!?]+/g);
+        // STEP 3: Remove all template markers
+        fullText = fullText.split('<|im_end|>')[0].trim();
+        fullText = fullText.split('<|im_start|>')[0].trim();
+        fullText = fullText.replace(/<\|im_end\|>/g, '');
+        fullText = fullText.replace(/<\|im_start\|>/g, '');
+        fullText = fullText.replace(/^assistant[\s:]*|^user[\s:]*|^system[\s:]*/gi, '');
+
+        // STEP 4: Aggressively remove ANY part of the system prompt that leaked through
+        const promptParts = [
+            'You are a helpful AI assistant that generates realistic Minecraft player dialogue',
+            'You are a helpful AI assistant',
+            'helpful AI assistant',
+            'generates realistic Minecraft player dialogue',
+            'realistic Minecraft player dialogue',
+            'Generate a short, natural message',
+            'Generate ONLY the dialogue',
+            'would say to',
+            'Talking to:',
+            'Character:',
+            'Situation:',
+            'Things you like:',
+            'Things you dislike:',
+            /I'm \w+, playing on this Minecraft server/gi,
+            /I'm thinking about what to say/gi,
+            /playing on this Minecraft server/gi,
+            /thinking about what to say/gi,
+            /I say to/gi,
+            /Gen \d+/gi,
+            /\(Gen \d+\)/gi,
+            /generation \d+/gi
+        ];
+
+        for (const part of promptParts) {
+            if (typeof part === 'string') {
+                fullText = fullText.replace(new RegExp(part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
+            } else {
+                fullText = fullText.replace(part, '').trim();
+            }
+        }
+
+        // STEP 5: Remove quotes and prefixes
+        fullText = fullText.replace(/^["'\s]+|["'\s]+$/g, '');
+        fullText = fullText.replace(/^\w+:\s*/, ''); // Remove "Name: " prefix
+
+        // STEP 6: Clean up and extract ONLY real dialogue (first 1-2 sentences)
+        fullText = fullText.trim();
+
+        // If it still contains template text, it's garbage - return fallback
+        const badPhrases = [
+            'you are',
+            'generate',
+            'minecraft player',
+            'dialogue',
+            'assistant',
+            'system',
+            'user\n'
+        ];
+
+        const lowerText = fullText.toLowerCase();
+        for (const phrase of badPhrases) {
+            if (lowerText.includes(phrase) && lowerText.indexOf(phrase) < 50) {
+                // Bad phrase appears early in text = probably leaked prompt
+                return 'Hey there!';
+            }
+        }
+
+        // Extract sentences
+        const sentences = fullText.match(/[^.!?]+[.!?]+/g);
         if (sentences && sentences.length > 0) {
             // Take first 1-2 sentences max
-            text = sentences.slice(0, 2).join(' ').trim();
-        } else if (text.length > 0) {
+            fullText = sentences.slice(0, 2).join(' ').trim();
+        } else if (fullText.length > 0) {
             // No punctuation, limit by words
-            const words = text.split(' ');
+            const words = fullText.split(/\s+/);
             if (words.length > 20) {
-                text = words.slice(0, 20).join(' ') + '...';
+                fullText = words.slice(0, 20).join(' ') + '...';
             }
         }
 
         // Final safety check
-        if (!text || text.length === 0 || text.toLowerCase().includes('you are roleplaying')) {
+        if (!fullText || fullText.length < 3) {
             return 'Hey there!';
         }
 
-        return text;
+        return fullText;
     }
 
     /**
@@ -622,6 +1057,16 @@ What do you say to ${listener.name}? Respond in character with just the dialogue
                 `Hey ${listener.name}! How's it going?`,
                 `${listener.name}, good to see you around here.`,
                 `What's up ${listener.name}?`
+            ],
+            introduction: [
+                `Hello everyone! I'm ${speaker.name}, just arrived in the village.`,
+                `Hey ${listener.name}! I'm ${speaker.name}, nice to meet you!`,
+                `${listener.name}, hi! I'm ${speaker.name}, new here. Looking forward to working together!`
+            ],
+            farewell: [
+                `Goodbye ${listener.name}... it's been an adventure. Take care of yourself.`,
+                `${listener.name}, this is farewell. Thank you for everything, friend.`,
+                `${listener.name}, I have to go now. Remember the good times we had together.`
             ],
             needs_help: [
                 `${listener.name}, I could use some help here.`,

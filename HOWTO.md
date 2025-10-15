@@ -164,7 +164,75 @@ If you already have a Minecraft server:
 
 ## Configuration
 
-### Main Configuration File
+### Modular Architecture (NEW!)
+
+**The system has been refactored into clean, modular components for better maintainability.**
+
+**New Module Files**:
+- `config.js` - **All configuration in one place!**
+- `agent.js` - Agent creation and lifecycle
+- `networking.js` - Communication and messaging
+- `tasks.js` - Behavior and goals
+- `gym.js` - ML training environment interface
+
+### Main Configuration File (config.js)
+
+**All settings are now in `config.js`**:
+
+```javascript
+// Example: Adjust agent limit
+module.exports = {
+    agents: {
+        maxAgents: 20,  // Maximum number of concurrent agents
+        batchSpawnSize: 1,
+        batchSpawnDelay: 15000,
+        types: ['MINING', 'LUMBERJACK', 'FISHING', ...],
+    },
+
+    server: {
+        host: 'vps-38b05e45.vps.ovh.net',
+        port: 25565,
+        version: '1.21'
+    },
+
+    llm: {
+        backend: 'transformers',  // Options: 'mock', 'transformers', 'llamacpp', 'ollama'
+        transformers: {
+            temperature: 1.1,  // Creativity level
+            repetitionPenalty: 1.5  // Prevent repetitive dialogue
+        }
+    },
+
+    ml: {
+        enabled: true,
+        rewards: {
+            survival: 0.1,
+            inventoryPickup: 5.0,
+            toolCrafting: 10.0,
+            exploration: 15.0,
+            socialInteraction: 0.5
+        }
+    },
+
+    features: {
+        enableIdlePenalty: false,  // Let agents explore freely
+        enableStuckDetection: true,
+        enableKnowledgeSharing: true,
+        enableSocialRewards: true
+    }
+};
+```
+
+**Benefits of New Structure**:
+- ✅ Single source of truth for all settings
+- ✅ No need to search through thousands of lines of code
+- ✅ Easy to understand and modify
+- ✅ Clear organization by category
+- ✅ Feature flags for easy enable/disable
+
+### Legacy Configuration (intelligent_village.js)
+
+**Note**: The old way of editing `intelligent_village.js` still works, but it's recommended to use `config.js` instead.
 
 Edit `D:\MineRL\intelligent_village.js` (lines 30-45):
 
@@ -1494,12 +1562,6 @@ You now have everything you need to run the Intelligent Village system!
 3. Experiment with configurations
 4. Scale up to 100+ agents
 5. Enable multi-threading for 1000+ agents
-
-**Need Help?**:
-- Check console logs for errors
-- Review troubleshooting section
-- Check dashboard TTY console
-- Verify all prerequisites installed
 
 **Have Fun Watching Your AI Village Evolve!** 🏘️🤖
 

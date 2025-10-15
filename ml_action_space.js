@@ -7,8 +7,203 @@ const { goals } = require('mineflayer-pathfinder');
 const { GoalNear, GoalBlock, GoalFollow, GoalXZ } = goals;
 const Vec3 = require('vec3');
 
+// Import modular action classes
+const {
+    InventoryActions,
+    CraftingActions,
+    ContainerActions,
+    EnchantingActions,
+    TradingActions,
+    AgricultureActions,
+    RedstoneActions,
+    BedActions,
+    CombatAdvancedActions,
+    NavigationActions,
+    OptimizationActions,
+    CommunicationActions
+} = require('./actions');
+
 class ActionSpace {
     constructor() {
+        // Initialize action modules
+        this.inventoryActions = new InventoryActions(this);
+        this.craftingActions = new CraftingActions(this);
+        this.containerActions = new ContainerActions(this);
+        this.enchantingActions = new EnchantingActions(this);
+        this.tradingActions = new TradingActions(this);
+        this.agricultureActions = new AgricultureActions(this);
+        this.redstoneActions = new RedstoneActions(this);
+        this.bedActions = new BedActions(this);
+        this.combatAdvancedActions = new CombatAdvancedActions(this);
+        this.navigationActions = new NavigationActions(this);
+        this.optimizationActions = new OptimizationActions(this);
+        this.communicationActions = new CommunicationActions(this);
+
+        // Bind modular action methods (76-215)
+        // Inventory Management (76-90)
+        this.tossTrashItems = this.inventoryActions.tossTrashItems.bind(this.inventoryActions);
+        this.sortInventory = this.inventoryActions.sortInventory.bind(this.inventoryActions);
+        this.equipArmorSet = this.inventoryActions.equipArmorSet.bind(this.inventoryActions);
+        this.swapHotbarSlot = this.inventoryActions.swapHotbarSlot.bind(this.inventoryActions);
+        this.stackItems = this.inventoryActions.stackItems.bind(this.inventoryActions);
+        this.equipHelmet = this.inventoryActions.equipHelmet.bind(this.inventoryActions);
+        this.equipChestplate = this.inventoryActions.equipChestplate.bind(this.inventoryActions);
+        this.equipLeggings = this.inventoryActions.equipLeggings.bind(this.inventoryActions);
+        this.equipBoots = this.inventoryActions.equipBoots.bind(this.inventoryActions);
+        this.equipShield = this.inventoryActions.equipShield.bind(this.inventoryActions);
+        this.tossExtraTools = this.inventoryActions.tossExtraTools.bind(this.inventoryActions);
+        this.quickSwapWeapon = this.inventoryActions.quickSwapWeapon.bind(this.inventoryActions);
+        this.fillEmptySlots = this.inventoryActions.fillEmptySlots.bind(this.inventoryActions);
+        this.collectAndOrganize = this.inventoryActions.collectAndOrganize.bind(this.inventoryActions);
+        this.prioritizeValuableItems = this.inventoryActions.prioritizeValuableItems.bind(this.inventoryActions);
+
+        // Advanced Crafting (91-110)
+        this.craftWoodenTools = this.craftingActions.craftWoodenTools.bind(this.craftingActions);
+        this.craftStoneTools = this.craftingActions.craftStoneTools.bind(this.craftingActions);
+        this.craftIronTools = this.craftingActions.craftIronTools.bind(this.craftingActions);
+        this.craftDiamondTools = this.craftingActions.craftDiamondTools.bind(this.craftingActions);
+        this.craftWoodenSword = this.craftingActions.craftWoodenSword.bind(this.craftingActions);
+        this.craftStoneSword = this.craftingActions.craftStoneSword.bind(this.craftingActions);
+        this.craftIronSword = this.craftingActions.craftIronSword.bind(this.craftingActions);
+        this.craftDiamondSword = this.craftingActions.craftDiamondSword.bind(this.craftingActions);
+        this.craftIronArmor = this.craftingActions.craftIronArmor.bind(this.craftingActions);
+        this.craftDiamondArmor = this.craftingActions.craftDiamondArmor.bind(this.craftingActions);
+        this.craftShield = this.craftingActions.craftShield.bind(this.craftingActions);
+        this.craftBow = this.craftingActions.craftBow.bind(this.craftingActions);
+        this.craftArrows = this.craftingActions.craftArrows.bind(this.craftingActions);
+        this.craftBed = this.craftingActions.craftBed.bind(this.craftingActions);
+        this.craftBucket = this.craftingActions.craftBucket.bind(this.craftingActions);
+        this.smeltIronOre = this.craftingActions.smeltIronOre.bind(this.craftingActions);
+        this.smeltGoldOre = this.craftingActions.smeltGoldOre.bind(this.craftingActions);
+        this.smeltFood = this.craftingActions.smeltFood.bind(this.craftingActions);
+        this.craftSticks = this.craftingActions.craftSticks.bind(this.craftingActions);
+        this.craftPlanks = this.craftingActions.craftPlanks.bind(this.craftingActions);
+
+        // Container Operations (111-122)
+        this.depositAllItems = this.containerActions.depositAllItems.bind(this.containerActions);
+        this.depositOres = this.containerActions.depositOres.bind(this.containerActions);
+        this.depositFood = this.containerActions.depositFood.bind(this.containerActions);
+        this.depositTools = this.containerActions.depositTools.bind(this.containerActions);
+        this.withdrawFood = this.containerActions.withdrawFood.bind(this.containerActions);
+        this.withdrawTools = this.containerActions.withdrawTools.bind(this.containerActions);
+        this.withdrawMaterials = this.containerActions.withdrawMaterials.bind(this.containerActions);
+        this.organizeChest = this.containerActions.organizeChest.bind(this.containerActions);
+        this.openNearbyFurnace = this.containerActions.openNearbyFurnace.bind(this.containerActions);
+        this.openCraftingTable = this.containerActions.openCraftingTable.bind(this.containerActions);
+        this.takeFromFurnace = this.containerActions.takeFromFurnace.bind(this.containerActions);
+        this.loadFurnace = this.containerActions.loadFurnace.bind(this.containerActions);
+
+        // Enchanting & Brewing (123-132)
+        this.openEnchantingTable = this.enchantingActions.openEnchantingTable.bind(this.enchantingActions);
+        this.enchantTool = this.enchantingActions.enchantTool.bind(this.enchantingActions);
+        this.enchantWeapon = this.enchantingActions.enchantWeapon.bind(this.enchantingActions);
+        this.enchantArmor = this.enchantingActions.enchantArmor.bind(this.enchantingActions);
+        this.useAnvilRepair = this.enchantingActions.useAnvilRepair.bind(this.enchantingActions);
+        this.useAnvilCombine = this.enchantingActions.useAnvilCombine.bind(this.enchantingActions);
+        this.useGrindstone = this.enchantingActions.useGrindstone.bind(this.enchantingActions);
+        this.brewPotion = this.enchantingActions.brewPotion.bind(this.enchantingActions);
+        this.gatherLapis = this.enchantingActions.gatherLapis.bind(this.enchantingActions);
+        this.createEnchantingSetup = this.enchantingActions.createEnchantingSetup.bind(this.enchantingActions);
+
+        // Trading (133-140)
+        this.findVillager = this.tradingActions.findVillager.bind(this.tradingActions);
+        this.openVillagerTrade = this.tradingActions.openVillagerTrade.bind(this.tradingActions);
+        this.executeTrade = this.tradingActions.executeTrade.bind(this.tradingActions);
+        this.findBestTrade = this.tradingActions.findBestTrade.bind(this.tradingActions);
+        this.cureZombieVillager = this.tradingActions.cureZombieVillager.bind(this.tradingActions);
+        this.protectVillager = this.tradingActions.protectVillager.bind(this.tradingActions);
+        this.createTradingHall = this.tradingActions.createTradingHall.bind(this.tradingActions);
+        this.gatherEmeralds = this.tradingActions.gatherEmeralds.bind(this.tradingActions);
+
+        // Agriculture (141-155)
+        this.plantSeeds = this.agricultureActions.plantSeeds.bind(this.agricultureActions);
+        this.harvestWheat = this.agricultureActions.harvestWheat.bind(this.agricultureActions);
+        this.harvestCarrots = this.agricultureActions.harvestCarrots.bind(this.agricultureActions);
+        this.harvestPotatoes = this.agricultureActions.harvestPotatoes.bind(this.agricultureActions);
+        this.breedCows = this.agricultureActions.breedCows.bind(this.agricultureActions);
+        this.breedPigs = this.agricultureActions.breedPigs.bind(this.agricultureActions);
+        this.breedSheep = this.agricultureActions.breedSheep.bind(this.agricultureActions);
+        this.breedChickens = this.agricultureActions.breedChickens.bind(this.agricultureActions);
+        this.shearSheep = this.agricultureActions.shearSheep.bind(this.agricultureActions);
+        this.milkCow = this.agricultureActions.milkCow.bind(this.agricultureActions);
+        this.useBoneMeal = this.agricultureActions.useBoneMeal.bind(this.agricultureActions);
+        this.tillSoil = this.agricultureActions.tillSoil.bind(this.agricultureActions);
+        this.createFarmPlot = this.agricultureActions.createFarmPlot.bind(this.agricultureActions);
+        this.findWaterSource = this.agricultureActions.findWaterSource.bind(this.agricultureActions);
+        this.collectEggs = this.agricultureActions.collectEggs.bind(this.agricultureActions);
+
+        // Redstone & Mechanisms (156-165)
+        this.activateLever = this.redstoneActions.activateLever.bind(this.redstoneActions);
+        this.pressButton = this.redstoneActions.pressButton.bind(this.redstoneActions);
+        this.activatePressurePlate = this.redstoneActions.activatePressurePlate.bind(this.redstoneActions);
+        this.placeRedstone = this.redstoneActions.placeRedstone.bind(this.redstoneActions);
+        this.placeRepeater = this.redstoneActions.placeRepeater.bind(this.redstoneActions);
+        this.openDoor = this.redstoneActions.openDoor.bind(this.redstoneActions);
+        this.closeDoor = this.redstoneActions.closeDoor.bind(this.redstoneActions);
+        this.openTrapdoor = this.redstoneActions.openTrapdoor.bind(this.redstoneActions);
+        this.openFenceGate = this.redstoneActions.openFenceGate.bind(this.redstoneActions);
+        this.useHopper = this.redstoneActions.useHopper.bind(this.redstoneActions);
+
+        // Bed & Time (166-170)
+        this.sleepInBed = this.bedActions.sleepInBed.bind(this.bedActions);
+        this.wakeFromBed = this.bedActions.wakeFromBed.bind(this.bedActions);
+        this.findBed = this.bedActions.findBed.bind(this.bedActions);
+        this.claimBed = this.bedActions.claimBed.bind(this.bedActions);
+        this.waitForNight = this.bedActions.waitForNight.bind(this.bedActions);
+
+        // Fine Motor Combat (171-182)
+        this.criticalHit = this.combatAdvancedActions.criticalHit.bind(this.combatAdvancedActions);
+        this.blockWithShield = this.combatAdvancedActions.blockWithShield.bind(this.combatAdvancedActions);
+        this.strafeLeft = this.combatAdvancedActions.strafeLeft.bind(this.combatAdvancedActions);
+        this.strafeRight = this.combatAdvancedActions.strafeRight.bind(this.combatAdvancedActions);
+        this.comboAttack = this.combatAdvancedActions.comboAttack.bind(this.combatAdvancedActions);
+        this.kiteEnemy = this.combatAdvancedActions.kiteEnemy.bind(this.combatAdvancedActions);
+        this.circleStrafe = this.combatAdvancedActions.circleStrafe.bind(this.combatAdvancedActions);
+        this.backstab = this.combatAdvancedActions.backstab.bind(this.combatAdvancedActions);
+        this.knockbackAttack = this.combatAdvancedActions.knockbackAttack.bind(this.combatAdvancedActions);
+        this.sweepAttack = this.combatAdvancedActions.sweepAttack.bind(this.combatAdvancedActions);
+        this.fightDefensive = this.combatAdvancedActions.fightDefensive.bind(this.combatAdvancedActions);
+        this.fightAggressive = this.combatAdvancedActions.fightAggressive.bind(this.combatAdvancedActions);
+
+        // Advanced Navigation (183-197)
+        this.swimForward = this.navigationActions.swimForward.bind(this.navigationActions);
+        this.swimUp = this.navigationActions.swimUp.bind(this.navigationActions);
+        this.swimDown = this.navigationActions.swimDown.bind(this.navigationActions);
+        this.climbVine = this.navigationActions.climbVine.bind(this.navigationActions);
+        this.climbLadder = this.navigationActions.climbLadder.bind(this.navigationActions);
+        this.useBoat = this.navigationActions.useBoat.bind(this.navigationActions);
+        this.exitBoat = this.navigationActions.exitBoat.bind(this.navigationActions);
+        this.parkourJump = this.navigationActions.parkourJump.bind(this.navigationActions);
+        this.bridgeForward = this.navigationActions.bridgeForward.bind(this.navigationActions);
+        this.pillarUp = this.navigationActions.pillarUp.bind(this.navigationActions);
+        this.pillarDown = this.navigationActions.pillarDown.bind(this.navigationActions);
+        this.navigateRavine = this.navigationActions.navigateRavine.bind(this.navigationActions);
+        this.crossLava = this.navigationActions.crossLava.bind(this.navigationActions);
+        this.findCaveEntrance = this.navigationActions.findCaveEntrance.bind(this.navigationActions);
+        this.escapeWater = this.navigationActions.escapeWater.bind(this.navigationActions);
+
+        // Resource Optimization (198-207)
+        this.selectOptimalTool = this.optimizationActions.selectOptimalTool.bind(this.optimizationActions);
+        this.repairWithAnvil = this.optimizationActions.repairWithAnvil.bind(this.optimizationActions);
+        this.salvageTools = this.optimizationActions.salvageTools.bind(this.optimizationActions);
+        this.optimizeInventorySpace = this.optimizationActions.optimizeInventorySpace.bind(this.optimizationActions);
+        this.conserveDurability = this.optimizationActions.conserveDurability.bind(this.optimizationActions);
+        this.efficientMining = this.optimizationActions.efficientMining.bind(this.optimizationActions);
+        this.stripMine = this.optimizationActions.stripMine.bind(this.optimizationActions);
+        this.branchMine = this.optimizationActions.branchMine.bind(this.optimizationActions);
+        this.caveMining = this.optimizationActions.caveMining.bind(this.optimizationActions);
+        this.fortuneMining = this.optimizationActions.fortuneMining.bind(this.optimizationActions);
+
+        // Communication & Signaling (208-215)
+        this.dropItemSignal = this.communicationActions.dropItemSignal.bind(this.communicationActions);
+        this.placeMarkerBlock = this.communicationActions.placeMarkerBlock.bind(this.communicationActions);
+        this.createWaypoint = this.communicationActions.createWaypoint.bind(this.communicationActions);
+        this.signalDanger = this.communicationActions.signalDanger.bind(this.communicationActions);
+        this.signalResources = this.communicationActions.signalResources.bind(this.communicationActions);
+        this.formLine = this.communicationActions.formLine.bind(this.communicationActions);
+        this.formCircle = this.communicationActions.formCircle.bind(this.communicationActions);
+        this.followLeader = this.communicationActions.followLeader.bind(this.communicationActions);
+
         // Define all possible actions
         this.actions = [
             // === MOVEMENT ACTIONS (0-9) ===
@@ -96,6 +291,178 @@ class ActionSpace {
             { id: 67, name: 'pursue_achievement', type: 'utility', execute: this.pursueAchievement },
             { id: 68, name: 'satisfy_needs', type: 'utility', execute: this.satisfyNeeds },
             { id: 69, name: 'express_mood', type: 'utility', execute: this.expressMood },
+
+            // === ADVANCED ACTIONS (70-75) - NEW: Mineflayer examples ===
+            { id: 70, name: 'elytra_fly', type: 'advanced', execute: this.elytraFly },
+            { id: 71, name: 'shoot_bow', type: 'advanced', execute: this.shootBow },
+            { id: 72, name: 'shoot_crossbow', type: 'advanced', execute: this.shootCrossbow },
+            { id: 73, name: 'use_end_crystal', type: 'advanced', execute: this.useEndCrystal },
+            { id: 74, name: 'equip_totem', type: 'advanced', execute: this.equipTotem },
+            { id: 75, name: 'react_to_sound', type: 'advanced', execute: this.reactToSound },
+
+            // === INVENTORY MANAGEMENT (76-90) - Fine-grained control ===
+            { id: 76, name: 'toss_trash_items', type: 'inventory', execute: this.tossTrashItems },
+            { id: 77, name: 'sort_inventory', type: 'inventory', execute: this.sortInventory },
+            { id: 78, name: 'equip_armor_set', type: 'inventory', execute: this.equipArmorSet },
+            { id: 79, name: 'swap_hotbar_slot', type: 'inventory', execute: this.swapHotbarSlot },
+            { id: 80, name: 'stack_items', type: 'inventory', execute: this.stackItems },
+            { id: 81, name: 'equip_helmet', type: 'inventory', execute: this.equipHelmet },
+            { id: 82, name: 'equip_chestplate', type: 'inventory', execute: this.equipChestplate },
+            { id: 83, name: 'equip_leggings', type: 'inventory', execute: this.equipLeggings },
+            { id: 84, name: 'equip_boots', type: 'inventory', execute: this.equipBoots },
+            { id: 85, name: 'equip_shield', type: 'inventory', execute: this.equipShield },
+            { id: 86, name: 'toss_extra_tools', type: 'inventory', execute: this.tossExtraTools },
+            { id: 87, name: 'quick_swap_weapon', type: 'inventory', execute: this.quickSwapWeapon },
+            { id: 88, name: 'fill_empty_slots', type: 'inventory', execute: this.fillEmptySlots },
+            { id: 89, name: 'collect_and_organize', type: 'inventory', execute: this.collectAndOrganize },
+            { id: 90, name: 'prioritize_valuable_items', type: 'inventory', execute: this.prioritizeValuableItems },
+
+            // === ADVANCED CRAFTING (91-110) - Specific recipes ===
+            { id: 91, name: 'craft_wooden_tools', type: 'crafting', execute: this.craftWoodenTools },
+            { id: 92, name: 'craft_stone_tools', type: 'crafting', execute: this.craftStoneTools },
+            { id: 93, name: 'craft_iron_tools', type: 'crafting', execute: this.craftIronTools },
+            { id: 94, name: 'craft_diamond_tools', type: 'crafting', execute: this.craftDiamondTools },
+            { id: 95, name: 'craft_wooden_sword', type: 'crafting', execute: this.craftWoodenSword },
+            { id: 96, name: 'craft_stone_sword', type: 'crafting', execute: this.craftStoneSword },
+            { id: 97, name: 'craft_iron_sword', type: 'crafting', execute: this.craftIronSword },
+            { id: 98, name: 'craft_diamond_sword', type: 'crafting', execute: this.craftDiamondSword },
+            { id: 99, name: 'craft_armor_iron', type: 'crafting', execute: this.craftIronArmor },
+            { id: 100, name: 'craft_armor_diamond', type: 'crafting', execute: this.craftDiamondArmor },
+            { id: 101, name: 'craft_shield', type: 'crafting', execute: this.craftShield },
+            { id: 102, name: 'craft_bow', type: 'crafting', execute: this.craftBow },
+            { id: 103, name: 'craft_arrows', type: 'crafting', execute: this.craftArrows },
+            { id: 104, name: 'craft_bed', type: 'crafting', execute: this.craftBed },
+            { id: 105, name: 'craft_bucket', type: 'crafting', execute: this.craftBucket },
+            { id: 106, name: 'smelt_iron_ore', type: 'crafting', execute: this.smeltIronOre },
+            { id: 107, name: 'smelt_gold_ore', type: 'crafting', execute: this.smeltGoldOre },
+            { id: 108, name: 'smelt_food', type: 'crafting', execute: this.smeltFood },
+            { id: 109, name: 'craft_sticks', type: 'crafting', execute: this.craftSticks },
+            { id: 110, name: 'craft_planks', type: 'crafting', execute: this.craftPlanks },
+
+            // === CONTAINER OPERATIONS (111-122) - Storage management ===
+            { id: 111, name: 'deposit_all_items', type: 'container', execute: this.depositAllItems },
+            { id: 112, name: 'deposit_ores', type: 'container', execute: this.depositOres },
+            { id: 113, name: 'deposit_food', type: 'container', execute: this.depositFood },
+            { id: 114, name: 'deposit_tools', type: 'container', execute: this.depositTools },
+            { id: 115, name: 'withdraw_food', type: 'container', execute: this.withdrawFood },
+            { id: 116, name: 'withdraw_tools', type: 'container', execute: this.withdrawTools },
+            { id: 117, name: 'withdraw_materials', type: 'container', execute: this.withdrawMaterials },
+            { id: 118, name: 'organize_chest', type: 'container', execute: this.organizeChest },
+            { id: 119, name: 'open_nearby_furnace', type: 'container', execute: this.openNearbyFurnace },
+            { id: 120, name: 'open_crafting_table', type: 'container', execute: this.openCraftingTable },
+            { id: 121, name: 'take_from_furnace', type: 'container', execute: this.takeFromFurnace },
+            { id: 122, name: 'load_furnace', type: 'container', execute: this.loadFurnace },
+
+            // === ENCHANTING & BREWING (123-132) ===
+            { id: 123, name: 'open_enchanting_table', type: 'enchanting', execute: this.openEnchantingTable },
+            { id: 124, name: 'enchant_tool', type: 'enchanting', execute: this.enchantTool },
+            { id: 125, name: 'enchant_weapon', type: 'enchanting', execute: this.enchantWeapon },
+            { id: 126, name: 'enchant_armor', type: 'enchanting', execute: this.enchantArmor },
+            { id: 127, name: 'use_anvil_repair', type: 'enchanting', execute: this.useAnvilRepair },
+            { id: 128, name: 'use_anvil_combine', type: 'enchanting', execute: this.useAnvilCombine },
+            { id: 129, name: 'use_grindstone', type: 'enchanting', execute: this.useGrindstone },
+            { id: 130, name: 'brew_potion', type: 'enchanting', execute: this.brewPotion },
+            { id: 131, name: 'gather_lapis', type: 'enchanting', execute: this.gatherLapis },
+            { id: 132, name: 'create_enchanting_setup', type: 'enchanting', execute: this.createEnchantingSetup },
+
+            // === TRADING (133-140) ===
+            { id: 133, name: 'find_villager', type: 'trading', execute: this.findVillager },
+            { id: 134, name: 'open_villager_trade', type: 'trading', execute: this.openVillagerTrade },
+            { id: 135, name: 'execute_trade', type: 'trading', execute: this.executeTrade },
+            { id: 136, name: 'find_best_trade', type: 'trading', execute: this.findBestTrade },
+            { id: 137, name: 'cure_zombie_villager', type: 'trading', execute: this.cureZombieVillager },
+            { id: 138, name: 'protect_villager', type: 'trading', execute: this.protectVillager },
+            { id: 139, name: 'create_trading_hall', type: 'trading', execute: this.createTradingHall },
+            { id: 140, name: 'gather_emeralds', type: 'trading', execute: this.gatherEmeralds },
+
+            // === AGRICULTURE (141-155) ===
+            { id: 141, name: 'plant_seeds', type: 'agriculture', execute: this.plantSeeds },
+            { id: 142, name: 'harvest_wheat', type: 'agriculture', execute: this.harvestWheat },
+            { id: 143, name: 'harvest_carrots', type: 'agriculture', execute: this.harvestCarrots },
+            { id: 144, name: 'harvest_potatoes', type: 'agriculture', execute: this.harvestPotatoes },
+            { id: 145, name: 'breed_cows', type: 'agriculture', execute: this.breedCows },
+            { id: 146, name: 'breed_pigs', type: 'agriculture', execute: this.breedPigs },
+            { id: 147, name: 'breed_sheep', type: 'agriculture', execute: this.breedSheep },
+            { id: 148, name: 'breed_chickens', type: 'agriculture', execute: this.breedChickens },
+            { id: 149, name: 'shear_sheep', type: 'agriculture', execute: this.shearSheep },
+            { id: 150, name: 'milk_cow', type: 'agriculture', execute: this.milkCow },
+            { id: 151, name: 'use_bone_meal', type: 'agriculture', execute: this.useBoneMeal },
+            { id: 152, name: 'till_soil', type: 'agriculture', execute: this.tillSoil },
+            { id: 153, name: 'create_farm_plot', type: 'agriculture', execute: this.createFarmPlot },
+            { id: 154, name: 'find_water_source', type: 'agriculture', execute: this.findWaterSource },
+            { id: 155, name: 'collect_eggs', type: 'agriculture', execute: this.collectEggs },
+
+            // === REDSTONE & MECHANISMS (156-165) ===
+            { id: 156, name: 'activate_lever', type: 'redstone', execute: this.activateLever },
+            { id: 157, name: 'press_button', type: 'redstone', execute: this.pressButton },
+            { id: 158, name: 'activate_pressure_plate', type: 'redstone', execute: this.activatePressurePlate },
+            { id: 159, name: 'place_redstone', type: 'redstone', execute: this.placeRedstone },
+            { id: 160, name: 'place_repeater', type: 'redstone', execute: this.placeRepeater },
+            { id: 161, name: 'open_door', type: 'redstone', execute: this.openDoor },
+            { id: 162, name: 'close_door', type: 'redstone', execute: this.closeDoor },
+            { id: 163, name: 'open_trapdoor', type: 'redstone', execute: this.openTrapdoor },
+            { id: 164, name: 'open_fence_gate', type: 'redstone', execute: this.openFenceGate },
+            { id: 165, name: 'use_hopper', type: 'redstone', execute: this.useHopper },
+
+            // === BED & TIME (166-170) ===
+            { id: 166, name: 'sleep_in_bed', type: 'bed', execute: this.sleepInBed },
+            { id: 167, name: 'wake_from_bed', type: 'bed', execute: this.wakeFromBed },
+            { id: 168, name: 'find_bed', type: 'bed', execute: this.findBed },
+            { id: 169, name: 'claim_bed', type: 'bed', execute: this.claimBed },
+            { id: 170, name: 'wait_for_night', type: 'bed', execute: this.waitForNight },
+
+            // === FINE MOTOR COMBAT (171-182) ===
+            { id: 171, name: 'critical_hit', type: 'combat_advanced', execute: this.criticalHit },
+            { id: 172, name: 'block_with_shield', type: 'combat_advanced', execute: this.blockWithShield },
+            { id: 173, name: 'strafe_left', type: 'combat_advanced', execute: this.strafeLeft },
+            { id: 174, name: 'strafe_right', type: 'combat_advanced', execute: this.strafeRight },
+            { id: 175, name: 'combo_attack', type: 'combat_advanced', execute: this.comboAttack },
+            { id: 176, name: 'kite_enemy', type: 'combat_advanced', execute: this.kiteEnemy },
+            { id: 177, name: 'circle_strafe', type: 'combat_advanced', execute: this.circleStrafe },
+            { id: 178, name: 'backstab', type: 'combat_advanced', execute: this.backstab },
+            { id: 179, name: 'knockback_attack', type: 'combat_advanced', execute: this.knockbackAttack },
+            { id: 180, name: 'sweep_attack', type: 'combat_advanced', execute: this.sweepAttack },
+            { id: 181, name: 'fight_defensive', type: 'combat_advanced', execute: this.fightDefensive },
+            { id: 182, name: 'fight_aggressive', type: 'combat_advanced', execute: this.fightAggressive },
+
+            // === ADVANCED NAVIGATION (183-197) ===
+            { id: 183, name: 'swim_forward', type: 'navigation', execute: this.swimForward },
+            { id: 184, name: 'swim_up', type: 'navigation', execute: this.swimUp },
+            { id: 185, name: 'swim_down', type: 'navigation', execute: this.swimDown },
+            { id: 186, name: 'climb_vine', type: 'navigation', execute: this.climbVine },
+            { id: 187, name: 'climb_ladder', type: 'navigation', execute: this.climbLadder },
+            { id: 188, name: 'use_boat', type: 'navigation', execute: this.useBoat },
+            { id: 189, name: 'exit_boat', type: 'navigation', execute: this.exitBoat },
+            { id: 190, name: 'parkour_jump', type: 'navigation', execute: this.parkourJump },
+            { id: 191, name: 'bridge_forward', type: 'navigation', execute: this.bridgeForward },
+            { id: 192, name: 'pillar_up', type: 'navigation', execute: this.pillarUp },
+            { id: 193, name: 'pillar_down', type: 'navigation', execute: this.pillarDown },
+            { id: 194, name: 'navigate_ravine', type: 'navigation', execute: this.navigateRavine },
+            { id: 195, name: 'cross_lava', type: 'navigation', execute: this.crossLava },
+            { id: 196, name: 'find_cave_entrance', type: 'navigation', execute: this.findCaveEntrance },
+            { id: 197, name: 'escape_water', type: 'navigation', execute: this.escapeWater },
+
+            // === RESOURCE OPTIMIZATION (198-207) ===
+            { id: 198, name: 'select_optimal_tool', type: 'optimization', execute: this.selectOptimalTool },
+            { id: 199, name: 'repair_with_anvil', type: 'optimization', execute: this.repairWithAnvil },
+            { id: 200, name: 'salvage_tools', type: 'optimization', execute: this.salvageTools },
+            { id: 201, name: 'optimize_inventory_space', type: 'optimization', execute: this.optimizeInventorySpace },
+            { id: 202, name: 'conserve_durability', type: 'optimization', execute: this.conserveDurability },
+            { id: 203, name: 'efficient_mining', type: 'optimization', execute: this.efficientMining },
+            { id: 204, name: 'strip_mine', type: 'optimization', execute: this.stripMine },
+            { id: 205, name: 'branch_mine', type: 'optimization', execute: this.branchMine },
+            { id: 206, name: 'cave_mining', type: 'optimization', execute: this.caveMining },
+            { id: 207, name: 'fortune_mining', type: 'optimization', execute: this.fortuneMining },
+
+            // === COMMUNICATION & SIGNALING (208-215) ===
+            { id: 208, name: 'drop_item_signal', type: 'communication', execute: this.dropItemSignal },
+            { id: 209, name: 'place_marker_block', type: 'communication', execute: this.placeMarkerBlock },
+            { id: 210, name: 'create_waypoint', type: 'communication', execute: this.createWaypoint },
+            { id: 211, name: 'signal_danger', type: 'communication', execute: this.signalDanger },
+            { id: 212, name: 'signal_resources', type: 'communication', execute: this.signalResources },
+            { id: 213, name: 'form_line', type: 'communication', execute: this.formLine },
+            { id: 214, name: 'form_circle', type: 'communication', execute: this.formCircle },
+            { id: 215, name: 'follow_leader', type: 'communication', execute: this.followLeader },
         ];
 
         this.ACTION_COUNT = this.actions.length;
@@ -125,6 +492,14 @@ class ActionSpace {
      */
     getActionName(actionId) {
         return this.actions[actionId]?.name || 'unknown';
+    }
+
+    /**
+     * Get action ID by name (reverse lookup)
+     */
+    getActionId(actionName) {
+        const action = this.actions.find(a => a.name === actionName);
+        return action ? action.id : null;
     }
 
     // ===== MOVEMENT ACTIONS =====
@@ -570,7 +945,7 @@ class ActionSpace {
     }
 
     async requestHelp(bot) {
-        // Could broadcast via chat
+        // Move toward nearby agent (communication handled by LLM system)
         const nearbyAgent = Object.values(bot.entities).find(e =>
             e.type === 'player' &&
             e.username !== bot.username &&
@@ -578,7 +953,9 @@ class ActionSpace {
             e.position.distanceTo(bot.entity.position) < 16
         );
         if (nearbyAgent) {
-            bot.chat(`Need help! Health: ${bot.health}`);
+            // Approach the agent (LLM will handle verbal communication)
+            bot.pathfinder.setGoal(new GoalNear(nearbyAgent.position.x, nearbyAgent.position.y, nearbyAgent.position.z, 3), true);
+            await this.sleep(1000);
         }
     }
 
@@ -1037,6 +1414,213 @@ class ActionSpace {
             // Neutral: idle
             await this.idle(bot);
         }
+    }
+
+    // ===== ADVANCED ACTIONS (70-75) =====
+    async elytraFly(bot) {
+        // Elytra flying - requires elytra equipped and firework rockets
+        const elytra = bot.inventory.items().find(item => item.name === 'elytra');
+        if (elytra) {
+            try {
+                // Equip elytra in chest slot
+                await bot.equip(elytra, 'torso');
+
+                // Jump to start flying
+                bot.setControlState('jump', true);
+                await this.sleep(200);
+                bot.setControlState('jump', false);
+
+                // Use firework rocket to boost if available
+                const firework = bot.inventory.items().find(item => item.name === 'firework_rocket');
+                if (firework && bot.entity.onGround === false) {
+                    await bot.equip(firework, 'hand');
+                    await bot.activateItem();
+                }
+
+                // Glide forward
+                bot.setControlState('forward', true);
+                await this.sleep(2000);
+                bot.clearControlStates();
+            } catch (error) {
+                // Elytra flying failed
+            }
+        }
+    }
+
+    async shootBow(bot) {
+        // Shoot bow at nearest hostile mob or target
+        const bow = bot.inventory.items().find(item => item.name === 'bow');
+        const arrows = bot.inventory.items().find(item => item.name === 'arrow');
+
+        if (bow && arrows) {
+            try {
+                // Equip bow
+                await bot.equip(bow, 'hand');
+
+                // Find target
+                const hostileMobs = ['zombie', 'skeleton', 'spider', 'creeper', 'enderman'];
+                const target = Object.values(bot.entities).find(e =>
+                    e.position &&
+                    hostileMobs.includes(e.name) &&
+                    e.position.distanceTo(bot.entity.position) < 32
+                );
+
+                if (target) {
+                    // Look at target
+                    await bot.lookAt(target.position.offset(0, 1, 0));
+
+                    // Draw and shoot bow (hold for ~1 second for full power)
+                    bot.activateItem();
+                    await this.sleep(1000);
+                    bot.deactivateItem();
+                }
+            } catch (error) {
+                // Bow shooting failed
+            }
+        }
+    }
+
+    async shootCrossbow(bot) {
+        // Shoot crossbow (similar to bow but doesn't require holding)
+        const crossbow = bot.inventory.items().find(item => item.name === 'crossbow');
+        const arrows = bot.inventory.items().find(item => item.name === 'arrow');
+
+        if (crossbow && arrows) {
+            try {
+                // Equip crossbow
+                await bot.equip(crossbow, 'hand');
+
+                // Find target
+                const hostileMobs = ['zombie', 'skeleton', 'spider', 'creeper'];
+                const target = Object.values(bot.entities).find(e =>
+                    e.position &&
+                    hostileMobs.includes(e.name) &&
+                    e.position.distanceTo(bot.entity.position) < 32
+                );
+
+                if (target) {
+                    // Look at target
+                    await bot.lookAt(target.position.offset(0, 1, 0));
+
+                    // Load crossbow if not loaded
+                    const loadedCrossbow = bot.inventory.items().find(item =>
+                        item.name === 'crossbow' && item.nbt?.value?.Charged?.value === 1
+                    );
+
+                    if (!loadedCrossbow) {
+                        // Load crossbow
+                        bot.activateItem();
+                        await this.sleep(1250); // Crossbow load time
+                        bot.deactivateItem();
+                    }
+
+                    // Shoot
+                    await this.sleep(200);
+                    bot.activateItem();
+                    bot.deactivateItem();
+                }
+            } catch (error) {
+                // Crossbow shooting failed
+            }
+        }
+    }
+
+    async useEndCrystal(bot) {
+        // End crystal combat - advanced PvP technique
+        const endCrystal = bot.inventory.items().find(item => item.name === 'end_crystal');
+        const obsidian = bot.inventory.items().find(item => item.name === 'obsidian');
+
+        if (endCrystal && obsidian) {
+            try {
+                // Place obsidian on ground
+                await bot.equip(obsidian, 'hand');
+                const groundBlock = bot.blockAt(bot.entity.position.offset(2, -1, 0));
+                if (groundBlock && groundBlock.name !== 'air') {
+                    await bot.placeBlock(groundBlock, new Vec3(0, 1, 0));
+                    await this.sleep(200);
+
+                    // Place end crystal on obsidian
+                    await bot.equip(endCrystal, 'hand');
+                    const obsidianBlock = bot.blockAt(bot.entity.position.offset(2, 0, 0));
+                    if (obsidianBlock && obsidianBlock.name === 'obsidian') {
+                        await bot.placeBlock(obsidianBlock, new Vec3(0, 1, 0));
+
+                        // The crystal can be detonated by hitting it or hitting nearby blocks
+                        // For safety, move away after placing
+                        await this.retreat(bot);
+                    }
+                }
+            } catch (error) {
+                // Crystal placement failed
+            }
+        }
+    }
+
+    async equipTotem(bot) {
+        // Auto-equip totem of undying for defensive protection
+        const totem = bot.inventory.items().find(item => item.name === 'totem_of_undying');
+
+        if (totem) {
+            try {
+                // Check if we're in danger (low health or nearby threats)
+                const isDanger = bot.health < 10 || Object.values(bot.entities).some(e =>
+                    e.position &&
+                    ['zombie', 'skeleton', 'creeper', 'enderman', 'wither', 'ender_dragon'].includes(e.name) &&
+                    e.position.distanceTo(bot.entity.position) < 8
+                );
+
+                if (isDanger) {
+                    // Check if totem is already in offhand
+                    const offhandItem = bot.inventory.slots[45]; // Offhand slot
+                    if (!offhandItem || offhandItem.name !== 'totem_of_undying') {
+                        // Equip totem to offhand
+                        await bot.equip(totem, 'off-hand');
+                        console.log(`[TOTEM] ${bot.agentName} equipped totem of undying for protection`);
+                    }
+                }
+            } catch (error) {
+                // Totem equipping failed
+            }
+        }
+    }
+
+    async reactToSound(bot) {
+        // React to nearby sounds (requires sound detection)
+        // This is a placeholder - full implementation would require mineflayer sound events
+
+        // Listen for sound events (if available)
+        if (bot.listenerCount && bot.listenerCount('soundEffectHeard') > 0) {
+            // Already listening
+            return;
+        }
+
+        // Setup sound listener (one-time setup)
+        bot.on('soundEffectHeard', async (soundName, position, volume, pitch) => {
+            try {
+                // React to dangerous sounds
+                const dangerSounds = ['entity.tnt.primed', 'entity.creeper.primed', 'entity.ghast.shoot', 'entity.wither.spawn'];
+                if (dangerSounds.some(s => soundName.includes(s))) {
+                    console.log(`[SOUND] ${bot.agentName} detected danger sound: ${soundName}`);
+                    await this.retreat(bot);
+                }
+
+                // React to block breaking sounds (potential threat from players)
+                if (soundName.includes('block.stone.break') || soundName.includes('block.wood.break')) {
+                    // Look towards the sound
+                    if (position) {
+                        await bot.lookAt(position);
+                    }
+                }
+
+                // React to player sounds
+                if (soundName.includes('entity.player')) {
+                    // Be alert to nearby players
+                    await this.lookAround(bot);
+                }
+            } catch (error) {
+                // Sound reaction failed
+            }
+        });
     }
 
     // ===== HELPER METHODS =====
