@@ -34,6 +34,7 @@ const axios = require('axios');
 const { AgentAI, formatPos } = require('./agent_ai');
 const { VillageKnowledge } = require('./village_knowledge');
 const { SubagentManager } = require('./subagents');
+const { PluginSensorClient } = require('./plugin_sensor_client');
 const config = require('./config');
 const ActionSpace = require('./ml_action_space');
 const StateEncoder = require('./ml_state_encoder');
@@ -50,8 +51,10 @@ let memorySystem = null;
 // Chat LLM System
 const { getChatLLM } = require('./agent_chat_llm');
 const { DownloadManager } = require('./llm_download_manager');
+const { getChatManager } = require('./chat_manager');
 let chatLLM = null;
 let downloadManager = null;
+let chatManager = null;
 
 // Personality System
 const { getPersonalitySystem } = require('./agent_personality_system');
@@ -730,7 +733,8 @@ class FitnessTracker {
             const existing = fitnessArray.find(f => f.name === bot.agentName);
 
             if (existing) {
-                existing.fitness = fitness;
+                existing.fitness = fitness.total;
+                existing.fitnessData = fitness;
             } else {
                 fitnessArray.push({
                     name: bot.agentName,
@@ -887,6 +891,7 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
                 host: serverConfig.host,
                 port: serverConfig.port,
                 username: agentName,
+                version: '1.21',  // Fix protocol version detection for Spigot 1.21.10
                 auth: 'offline',
                 hideErrors: false,
                 logErrors: true,
@@ -910,6 +915,12 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
                 // ML Systems
                 bot.actionSpace = new ActionSpace();
                 bot.stateEncoder = new StateEncoder();
+
+                // Initialize Plugin Sensor Client (if enabled)
+                if (config.plugin.enabled) {
+                    bot.pluginSensorClient = new PluginSensorClient(config.plugin);
+                    bot.pluginSensorData = null; // Will store latest sensor data
+                }
 
                 // Initialize subagent system (DISABLED FOR DEBUGGING)
                 // bot.subagentManager = new SubagentManager(bot, agentType, {
@@ -982,8 +993,61 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
                         lineageTracker.registerAgent(agentType, agentName, generation, parentName, parentUUID);
                     }
 
-                    // Setup event handlers AFTER spawn
+                    // Initialize pathfinder
+                    const movements = new Movements(bot);
+                    bot.pathfinder.setMovements(movements);
+
+                    // Connect to Plugin Sensor Server (if enabled)
+                    if (config.plugin.enabled && bot.pluginSensorClient) {
+                        console.log(`[PLUGIN SENSOR] ${bot.agentName} connecting to WebSocket...`);
+
+                        bot.pluginSensorClient.on('connected', () => {
+                            console.log(`[PLUGIN SENSOR] ${bot.agentName} WebSocket connected`);
+                        });
+
+                        bot.pluginSensorClient.on('authenticated', () => {
+                            console.log(`[PLUGIN SENSOR] ${bot.agentName} authenticated, registering...`);
+                            bot.pluginSensorClient.registerBot(bot.agentName);
+                        });
+
+                        bot.pluginSensorClient.on('registered', (botName) => {
+                            console.log(`[PLUGIN SENSOR] ${bot.agentName} registered for sensor updates`);
+                        });
+
+                        bot.pluginSensorClient.on('sensor_update', ({ botName, timestamp, data }) => {
+                            bot.pluginSensorData = data; // Store latest sensor data for ML state encoding
+
+                            // Optional: Log first update as confirmation
+                            if (!bot._firstSensorUpdate) {
+                                bot._firstSensorUpdate = true;
+                                console.log(`[PLUGIN SENSOR] ${bot.agentName} receiving sensor data (${data.blocks?.length || 0} blocks, ${data.entities?.length || 0} entities)`);
+                            }
+                        });
+
+                        bot.pluginSensorClient.on('error', (error) => {
+                            console.error(`[PLUGIN SENSOR] ${bot.agentName} error: ${error.message}`);
+                        });
+
+                        // Connect after setting up event handlers
+                        bot.pluginSensorClient.connect();
+                    }
+
+                    // Setup event handlers (death, health, etc.)
                     setupAgentEvents(bot);
+
+                    // Start ML behavior loop NOW
+                    startAgentBehavior(bot);
+
+                    // Emit to dashboard
+                    if (dashboard && dashboard.emitAgentJoined) {
+                        dashboard.emitAgentJoined({
+                            name: bot.agentName,
+                            type: bot.agentType,
+                            generation: bot.generation,
+                            uuid: bot.uuid,
+                            parentUUID: bot.parentUUID
+                        });
+                    }
 
                     if (callback) callback(bot);
                     resolve(bot);
@@ -1010,30 +1074,16 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
 // ============================================================================
 
 function setupAgentEvents(bot) {
-    bot.once('spawn', () => {
-        console.log(`[AGENT] ${bot.agentName} joined the server`);
-
-        // Initialize pathfinder
-        const movements = new Movements(bot);
-        bot.pathfinder.setMovements(movements);
-
-        // Start agent behavior loop
-        startAgentBehavior(bot);
-
-        // Emit to dashboard
-        if (dashboard && dashboard.emitAgentJoined) {
-            dashboard.emitAgentJoined({
-                name: bot.agentName,
-                type: bot.agentType,
-                generation: bot.generation,
-                uuid: bot.uuid,
-                parentUUID: bot.parentUUID
-            });
-        }
-    });
+    // Note: Spawn event initialization moved to createAgent() to avoid race condition
+    console.log(`[AGENT] ${bot.agentName} setting up event handlers`);
 
     bot.on('death', () => {
         console.log(`[DEATH] ${bot.agentName} died`);
+
+        // Disconnect plugin sensor client
+        if (bot.pluginSensorClient) {
+            bot.pluginSensorClient.disconnect();
+        }
 
         // Save personality for offspring inheritance
         if (bot.personality && bot.uuid) {
@@ -1076,7 +1126,7 @@ function setupAgentEvents(bot) {
         }
     });
 
-    // Chat handler
+    // Chat handler (using ChatManager for queue/rate limiting)
     bot.on('chat', (username, message) => {
         if (username === bot.username) return;
 
@@ -1085,32 +1135,24 @@ function setupAgentEvents(bot) {
         // Add to AI context
         bot.ai.addMessage(username, message);
 
-        const lowerMessage = message.toLowerCase();
-        const myName = bot.agentName.toLowerCase();
+        // Check if speaker is another agent
+        const isAgent = activeAgents.has(username);
 
-        // Filter out name-only messages (just mentioning the agent name)
-        const isNameOnly = lowerMessage.trim() === myName.trim();
-        if (isNameOnly) {
-            // Simple acknowledgment for name-only mentions
-            setTimeout(() => {
-                bot.chat(`Yes, ${username}?`);
-                console.log(`[CHAT] ${bot.agentName} → ${username}: "Yes, ${username}?"`);
-            }, 500 + Math.random() * 1000);
-            return;
-        }
+        // Use ChatManager to determine if we should respond
+        const responseDecision = chatManager.shouldRespond(bot, username, message, isAgent);
 
-        // Respond if:
-        // 1. Mentioned by name
-        // 2. General greeting to everyone
-        // 3. Another agent talking (30% chance to join conversation)
-        const isMentioned = lowerMessage.includes(myName);
-        const isGreeting = lowerMessage.includes('hello') || lowerMessage.includes('hi ') || lowerMessage.includes('hey');
-        const isAgent = activeAgents.has(username); // Check if speaker is another agent
-        const shouldRespond = isMentioned ||
-                             (isGreeting && !lowerMessage.includes('there')) || // "Hi" but not "Hi there"
-                             (isAgent && Math.random() < 0.3); // 30% chance to respond to agents
+        if (responseDecision.shouldRespond) {
+            // Handle quick replies (like "Yes, username?")
+            if (responseDecision.quickReply) {
+                chatManager.queueMessage(bot, responseDecision.quickReply, {
+                    channel: responseDecision.channel,
+                    target: responseDecision.target,
+                    priority: responseDecision.priority
+                });
+                return;
+            }
 
-        if (shouldRespond) {
+            // Build listener context
             const listener = {
                 name: username,
                 message: message,
@@ -1118,19 +1160,17 @@ function setupAgentEvents(bot) {
                 mood: 'unknown'
             };
 
-            // Check if this is a real player or another agent
             const targetBot = activeAgents.get(username);
             if (targetBot) {
-                // It's another agent - add more context
                 listener.needs = targetBot.moods || {};
                 listener.inventory = targetBot.inventory ? targetBot.inventory.items().slice(0, 3).map(item => item.name).join(', ') : 'unknown';
                 listener.mood = targetBot.moods ? getMoodDescription(targetBot.moods) : 'neutral';
             }
 
-            // Build enriched speaker profile with thought process and conversation history
+            // Generate and queue response (async)
             (async () => {
                 try {
-                    // Load conversation history from database
+                    // Load conversation history
                     let conversationHistory = [];
                     try {
                         conversationHistory = await loadConversationHistory(username, bot.agentName, 10);
@@ -1138,7 +1178,7 @@ function setupAgentEvents(bot) {
                         console.error(`[CHAT] Failed to load conversation history: ${err.message}`);
                     }
 
-                    // Get relationship data from memory system
+                    // Get relationship data
                     let relationshipData = null;
                     if (memorySystem && bot.uuid && targetBot && targetBot.uuid) {
                         try {
@@ -1149,7 +1189,7 @@ function setupAgentEvents(bot) {
                         }
                     }
 
-                    // Build speaker profile with ALL context
+                    // Build enriched speaker profile
                     const enrichedSpeaker = {
                         name: bot.agentName,
                         type: bot.agentType,
@@ -1169,18 +1209,20 @@ function setupAgentEvents(bot) {
                         relationshipWithListener: relationshipData
                     };
 
+                    // Generate response using LLM
                     const response = await bot.ai.chatWithPlayer(bot, username, message, chatLLM, enrichedSpeaker);
+
                     if (response) {
-                        // Save conversation to database
+                        // Save to database
                         saveConversationMessage(username, bot.agentName, 'user', message);
                         saveConversationMessage(username, bot.agentName, 'assistant', response);
 
-                        // Add small random delay to make conversations feel more natural
-                        const delay = 500 + Math.random() * 1500; // 0.5-2 seconds
-                        setTimeout(() => {
-                            bot.chat(response);
-                            console.log(`[CHAT] ${bot.agentName} → ${username}: "${response}"`);
-                        }, delay);
+                        // Queue message with ChatManager
+                        chatManager.queueMessage(bot, response, {
+                            channel: responseDecision.channel,
+                            target: responseDecision.target,
+                            priority: responseDecision.priority
+                        });
                     }
                 } catch (err) {
                     console.error(`[CHAT] Error responding to ${username}: ${err.message}`);
@@ -1189,13 +1231,13 @@ function setupAgentEvents(bot) {
         }
     });
 
-    // Player join handler - Welcome new players and bots using LLM
+    // Player join handler - Welcome new players using ChatManager
     bot.on('playerJoined', (player) => {
         if (player.username === bot.username) return; // Don't greet yourself
 
-        // 50% chance to greet newcomers
-        if (Math.random() < 0.5) {
-            // Wait a bit before welcoming (more natural)
+        // Use ChatManager's greetingResponseChance
+        if (Math.random() < chatManager.config.greetingResponseChance) {
+            // Generate greeting asynchronously
             setTimeout(async () => {
                 try {
                     // Build speaker profile for LLM
@@ -1224,16 +1266,22 @@ function setupAgentEvents(bot) {
                     };
 
                     // Generate welcome message using LLM
-                    const greeting = await chatLLM.generateDialogue(speaker, listener, 'player_conversation');
+                    let greeting = null;
+                    if (chatLLM) {
+                        greeting = await chatLLM.generateDialogue(speaker, listener, 'player_conversation');
+                    } else {
+                        greeting = `Welcome ${player.username}!`;
+                    }
 
                     if (greeting) {
-                        bot.chat(greeting);
-                        console.log(`[WELCOME] ${bot.agentName} welcomed ${player.username}: "${greeting}"`);
+                        // Queue message via ChatManager
+                        chatManager.queueMessage(bot, greeting, {
+                            channel: 'global',
+                            priority: 3
+                        });
                     }
                 } catch (error) {
                     console.error(`[WELCOME] Error generating welcome for ${player.username}: ${error.message}`);
-                    // Simple fallback only on error
-                    bot.chat(`Welcome ${player.username}!`);
                 }
             }, 2000 + Math.random() * 3000); // 2-5 second delay
         }
@@ -1247,7 +1295,11 @@ function setupAgentEvents(bot) {
 async function startAgentBehavior(bot) {
     console.log(`[BEHAVIOR] ${bot.agentName} behavior loop started`);
 
-    // Periodic survival reward and stuck detection
+    // Initialize idle tracking
+    bot.lastActionTime = Date.now();
+    bot.totalIdleTime = 0;
+
+    // Periodic survival reward, stuck detection, and idle penalty
     setInterval(() => {
         if (bot.health > 0) {
             bot.rewards.addReward(REWARD_CONFIG.SURVIVAL_PER_STEP, 'survival');
@@ -1267,12 +1319,33 @@ async function startAgentBehavior(bot) {
 
             bot.stuckDetector.reset();
         }
+
+        // IF YOU AIN'T LEARNING, YOU DYING - Idle penalty system
+        if (config.features.enableIdlePenalty) {
+            const now = Date.now();
+            const timeSinceLastAction = now - bot.lastActionTime;
+
+            if (timeSinceLastAction > config.features.idleThreshold) {
+                // Agent is idle - apply penalty
+                bot.totalIdleTime += config.agents.rewardUpdateInterval;
+                bot.rewards.addReward(config.features.idlePenaltyAmount, 'IDLE PENALTY - move or die!');
+
+                if (bot.totalIdleTime % 30000 === 0) { // Log every 30 seconds
+                    console.warn(`[IDLE] ${bot.agentName} has been idle for ${(bot.totalIdleTime / 1000).toFixed(0)}s! Reward: ${bot.rewards.totalReward.toFixed(1)}`);
+                }
+            } else {
+                bot.totalIdleTime = 0; // Reset if agent took action
+            }
+        }
     }, config.agents.rewardUpdateInterval);
 
     // ML Decision-Making Loop - Every 3 seconds, let ML choose an action
+    console.log(`[ML LOOP CHECK] ${bot.agentName} - ML_ENABLED: ${ML_ENABLED}, mlTrainer: ${!!mlTrainer}, actionSpace: ${!!bot.actionSpace}`);
     if (ML_ENABLED && mlTrainer && bot.actionSpace) {
+        console.log(`[ML LOOP] Starting ML decision loop for ${bot.agentName}`);
         setInterval(async () => {
             try {
+                console.log(`[ML LOOP] Tick for ${bot.agentName} - Health: ${bot.health}, Has entity: ${!!bot.entity}, Has position: ${!!bot.entity?.position}`);
                 if (bot.health > 0 && bot.entity && bot.entity.position) {
                     // Encode current state
                     const state = bot.stateEncoder.encodeState(bot);
@@ -1296,17 +1369,25 @@ async function startAgentBehavior(bot) {
 
                     // Execute the action
                     const actionName = bot.actionSpace.getActionName(finalActionId);
+                    console.log(`[ML ACTION] ${bot.agentName} attempting action ${finalActionId}: ${actionName}`);
 
                     // Update bot's thought process and current action
                     bot.lastAction = actionName;
                     bot.lastThought = thoughtProcess;
 
                     const success = await bot.actionSpace.executeAction(finalActionId, bot);
+                    console.log(`[ML ACTION] ${bot.agentName} action result: ${success ? 'SUCCESS' : 'FAILED'}`);
+
+                    // Update last action time for idle detection (IF YOU AIN'T LEARNING, YOU DYING)
+                    if (success) {
+                        bot.lastActionTime = Date.now();
+                    }
 
                     // Give reward for action
                     if (success) {
                         const actionReward = REWARD_CONFIG.MOVEMENT;
                         bot.rewards.addReward(actionReward, `action: ${actionName}`);
+                        console.log(`[ML REWARD] ${bot.agentName} earned ${actionReward.toFixed(2)} for ${actionName}`);
                         bot.lastThought = `Successfully completed ${actionName}! Reward: +${actionReward.toFixed(2)}`;
 
                         // Record experience for ML learning
@@ -1614,6 +1695,13 @@ async function initializeSystems() {
             });
         }, config.memory.decayInterval);
     }
+
+    // Initialize Chat Manager
+    console.log('\n' + '='.repeat(70));
+    console.log('[CHAT MANAGER] Initializing Chat Queue System...');
+    chatManager = getChatManager();
+    console.log('[CHAT MANAGER] Queue-based chat system ready');
+    console.log('='.repeat(70) + '\n');
 
     // Initialize Chat LLM
     if (config.llm.enabled) {
@@ -2062,12 +2150,103 @@ app.get('/brain/json', (req, res) => {
     });
 });
 
+// Advanced visualization endpoint - brain state, decisions, evolution
+app.get('/viz', (req, res) => {
+    // Collect comprehensive agent data including ML state
+    const vizData = [];
+
+    activeAgents.forEach((bot, name) => {
+        // Get current ML state vector
+        let stateVector = null;
+        let actionProbabilities = null;
+        let brainParams = null;
+
+        try {
+            if (bot.stateEncoder && bot.entity) {
+                stateVector = bot.stateEncoder.encodeState(bot);
+            }
+
+            if (bot.brain && stateVector) {
+                actionProbabilities = bot.brain.getActionProbabilities(stateVector);
+                brainParams = bot.brain.getStats();
+            }
+        } catch (err) {
+            console.error(`[VIZ] Error encoding state for ${bot.agentName}: ${err.message}`);
+        }
+
+        vizData.push({
+            name: bot.agentName,
+            type: bot.agentType,
+            generation: bot.generation,
+            uuid: bot.uuid,
+            health: bot.health || 0,
+            food: bot.food || 0,
+            position: bot.entity?.position ? {
+                x: Math.floor(bot.entity.position.x),
+                y: Math.floor(bot.entity.position.y),
+                z: Math.floor(bot.entity.position.z)
+            } : null,
+            rewards: bot.rewards ? bot.rewards.getStats() : {},
+            currentAction: bot.lastAction || 'idle',
+            thoughtProcess: bot.lastThought || 'Exploring...',
+            stateVectorSize: stateVector ? stateVector.length : 0,
+            statePreview: stateVector ? Array.from(stateVector.slice(0, 20)) : null,
+            actionProbabilities: actionProbabilities ? Array.from(actionProbabilities).slice(0, 10) : null,
+            brainParams: brainParams,
+            personality: bot.personality ? mlPersonality.getPersonalitySummary(bot.personality) : null,
+            pluginSensorData: bot.pluginSensorData ? {
+                blocks: bot.pluginSensorData.blocks?.length || 0,
+                entities: bot.pluginSensorData.entities?.length || 0,
+                mobAI: bot.pluginSensorData.mobAI?.length || 0
+            } : null
+        });
+    });
+
+    // Get ML trainer statistics
+    let mlStats = null;
+    if (mlTrainer) {
+        try {
+            mlStats = mlTrainer.getStats();
+        } catch (err) {
+            console.error(`[VIZ] Error getting ML stats: ${err.message}`);
+        }
+    }
+
+    // Get fitness rankings
+    const rankings = fitnessTracker.getAllRankings();
+
+    // Get lineage data
+    const lineageData = [];
+    lineageTracker.agents.forEach((agents, type) => {
+        agents.forEach(agent => {
+            lineageData.push({
+                name: agent.name,
+                type: type,
+                generation: agent.generation,
+                parentName: agent.parentName,
+                parentUUID: agent.parentUUID,
+                birthTime: agent.birthTime
+            });
+        });
+    });
+
+    // Serve comprehensive visualization HTML
+    const html = require('fs').readFileSync(path.join(__dirname, 'viz_dashboard.html'), 'utf8')
+        .replace('__VIZ_DATA__', JSON.stringify(vizData))
+        .replace('__ML_STATS__', JSON.stringify(mlStats))
+        .replace('__RANKINGS__', JSON.stringify(rankings.slice(0, 10)))
+        .replace('__LINEAGE__', JSON.stringify(lineageData));
+
+    res.send(html);
+});
+
 // Start Express server
 function startBrainServer() {
     app.listen(BRAIN_PORT, () => {
         console.log('\n' + '='.repeat(70));
         console.log(`[BRAIN API] Server running at http://localhost:${BRAIN_PORT}/brain`);
         console.log(`[BRAIN API] JSON endpoint at http://localhost:${BRAIN_PORT}/brain/json`);
+        console.log(`[VIZ DASHBOARD] Brain visualization at http://localhost:${BRAIN_PORT}/viz`);
         console.log('='.repeat(70) + '\n');
     });
 }
