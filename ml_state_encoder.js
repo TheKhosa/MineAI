@@ -11,7 +11,7 @@ const { getMoodlesSystem } = require('./ml_zomboid_moodles');
 class StateEncoder {
     constructor() {
         // State vector dimensions
-        this.STATE_SIZE = 429;  // Expanded to include Project Zomboid skills & moodles
+        this.STATE_SIZE = 629;  // Expanded: 429 base + 200 plugin sensors + 65 additional mineflayer data (was 429)
 
         // Sub-vector sizes
         this.POSITION_SIZE = 3;
@@ -120,6 +120,21 @@ class StateEncoder {
 
         // 16. Moodles/Debuffs (14 values) - Project Zomboid-style status effects
         offset = this.encodeMoodles(bot, state, offset);
+
+        // 17-22. PLUGIN SENSOR DATA (200 values) - Enhanced Bukkit sensor data
+        offset = this.encodePluginBlockData(bot, state, offset);     // +50
+        offset = this.encodePluginEntityData(bot, state, offset);    // +30
+        offset = this.encodePluginMobAI(bot, state, offset);         // +40
+        offset = this.encodePluginWeather(bot, state, offset);       // +10
+        offset = this.encodePluginChunks(bot, state, offset);        // +30
+        offset = this.encodePluginItems(bot, state, offset);         // +40
+
+        // 23-27. ADDITIONAL MINEFLAYER DATA (65 values) - Missing data from mineflayer bot
+        offset = this.encodeExperience(bot, state, offset);          // +5
+        offset = this.encodeControlState(bot, state, offset);        // +15
+        offset = this.encodeEffects(bot, state, offset);             // +20
+        offset = this.encodeEquipment(bot, state, offset);           // +15
+        offset = this.encodeNearbyPlayers(bot, state, offset);       // +10
 
         // Fill remaining with zeros if needed
         while (offset < this.STATE_SIZE) {
@@ -267,7 +282,7 @@ class StateEncoder {
         const hostileMobs = Object.values(bot.entities).filter(e =>
             e.position &&
             e.position.distanceTo(bot.entity.position) < 8 &&
-            ['zombie', 'skeleton', 'spider', 'creeper', 'enderman'].includes(e.name)
+            e.name && ['zombie', 'skeleton', 'spider', 'creeper', 'enderman'].includes(e.name)
         );
         state[offset++] = Math.min(hostileMobs.length / 5.0, 1.0);
 
@@ -692,7 +707,7 @@ class StateEncoder {
         const nearbyHostiles = Object.values(bot.entities).filter(e =>
             e.position &&
             e.position.distanceTo(bot.entity.position) < 16 &&
-            ['zombie', 'skeleton', 'spider', 'creeper'].includes(e.name)
+            e.name && ['zombie', 'skeleton', 'spider', 'creeper'].includes(e.name)
         );
         needs.safety = Math.max(0, 1.0 - (nearbyHostiles.length * 0.2));
 
@@ -1078,6 +1093,827 @@ class StateEncoder {
                 state[offset++] = 0;
             }
         }
+
+        return offset;
+    }
+
+    // ============================================================
+    // PLUGIN SENSOR ENCODERS (Bukkit/Spigot Enhanced Data)
+    // ============================================================
+
+    /**
+     * Encode enhanced block data from plugin (50 dimensions)
+     * Source: bot.pluginSensorData.blocks (274,625 blocks with metadata)
+     */
+    encodePluginBlockData(bot, state, offset) {
+        if (!bot.pluginSensorData || !bot.pluginSensorData.blocks) {
+            return offset + 50; // Skip if no data
+        }
+
+        // CRITICAL FIX: Limit blocks to prevent stack overflow
+        // Plugin sends 274k+ blocks which causes Math.max(...blocks.map()) to overflow at line 1199
+        // Only use nearest 1000 blocks for encoding (reduces processing from 274k to 1k)
+        const allBlocks = bot.pluginSensorData.blocks;
+        const blocks = allBlocks.length > 1000 ? allBlocks.slice(0, 1000) : allBlocks;
+
+        // Feature 1-5: Block type distribution (top 5 most common nearby)
+        const blockCounts = {};
+        blocks.forEach(b => {
+            blockCounts[b.type] = (blockCounts[b.type] || 0) + 1;
+        });
+        const topBlocks = Object.entries(blockCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5);
+
+        for (let i = 0; i < 5; i++) {
+            if (i < topBlocks.length) {
+                const blockIdx = this.BLOCK_VOCAB.indexOf(topBlocks[i][0]);
+                state[offset++] = blockIdx >= 0 ? (blockIdx / this.BLOCK_VOCAB.length) : 0;
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 6-10: Average block properties
+        const avgHardness = blocks.reduce((sum, b) => sum + (b.hardness || 0), 0) / blocks.length;
+        const avgLightLevel = blocks.reduce((sum, b) => sum + (b.lightLevel || 0), 0) / blocks.length;
+        const passableRatio = blocks.filter(b => b.passable).length / blocks.length;
+        const solidRatio = blocks.filter(b => b.isSolid).length / blocks.length;
+        const flammableRatio = blocks.filter(b => b.isFlammable).length / blocks.length;
+
+        state[offset++] = Math.min(1.0, avgHardness / 50.0);
+        state[offset++] = avgLightLevel / 15.0;
+        state[offset++] = passableRatio;
+        state[offset++] = solidRatio;
+        state[offset++] = flammableRatio;
+
+        // Feature 11-20: Resource density (valuable blocks nearby)
+        const oreTypes = ['coal_ore', 'iron_ore', 'gold_ore', 'diamond_ore', 'lapis_ore',
+                          'redstone_ore', 'emerald_ore', 'copper_ore', 'ancient_debris', 'nether_quartz_ore'];
+        for (let i = 0; i < 10; i++) {
+            if (i < oreTypes.length) {
+                const oreCount = blocks.filter(b => b.type === oreTypes[i]).length;
+                state[offset++] = Math.min(1.0, oreCount / 10.0);
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 21-25: Building material availability
+        const materials = ['oak_log', 'cobblestone', 'dirt', 'sand', 'gravel'];
+        materials.forEach(mat => {
+            const count = blocks.filter(b => b.type === mat).length;
+            state[offset++] = Math.min(1.0, count / 50.0);
+        });
+
+        // Feature 26-30: Danger indicators
+        const lavaCount = blocks.filter(b => b.type === 'lava').length;
+        const waterCount = blocks.filter(b => b.type === 'water').length;
+        const cactusCount = blocks.filter(b => b.type === 'cactus').length;
+        const fireCount = blocks.filter(b => b.type === 'fire').length;
+        const explosiveCount = blocks.filter(b => b.type === 'tnt').length;
+
+        state[offset++] = Math.min(1.0, lavaCount / 5.0);
+        state[offset++] = Math.min(1.0, waterCount / 20.0);
+        state[offset++] = Math.min(1.0, cactusCount / 5.0);
+        state[offset++] = Math.min(1.0, fireCount / 3.0);
+        state[offset++] = Math.min(1.0, explosiveCount / 2.0);
+
+        // Feature 31-40: Structural blocks (crafting, storage, utility)
+        const structuralBlocks = ['chest', 'crafting_table', 'furnace', 'anvil',
+                                   'enchanting_table', 'brewing_stand', 'beacon',
+                                   'hopper', 'dispenser', 'dropper'];
+        structuralBlocks.forEach(block => {
+            const count = blocks.filter(b => b.type === block).length;
+            state[offset++] = Math.min(1.0, count / 3.0);
+        });
+
+        // Feature 41-45: Agricultural blocks
+        const agricBlocks = ['wheat', 'carrots', 'potatoes', 'farmland', 'hay_block'];
+        agricBlocks.forEach(block => {
+            const count = blocks.filter(b => b.type === block).length;
+            state[offset++] = Math.min(1.0, count / 10.0);
+        });
+
+        // Feature 46-50: Spatial distribution metrics
+        if (blocks.length > 0) {
+            const avgX = blocks.reduce((sum, b) => sum + b.x, 0) / blocks.length;
+            const avgY = blocks.reduce((sum, b) => sum + b.y, 0) / blocks.length;
+            const avgZ = blocks.reduce((sum, b) => sum + b.z, 0) / blocks.length;
+            const maxDistance = Math.max(...blocks.map(b =>
+                Math.sqrt(Math.pow(b.x - avgX, 2) + Math.pow(b.y - avgY, 2) + Math.pow(b.z - avgZ, 2))
+            ));
+            const blockDensity = blocks.length / 27000.0; // Normalized by 30x30x30 volume
+
+            state[offset++] = this.normalizeCoord(avgX);
+            state[offset++] = this.normalizeCoord(avgY);
+            state[offset++] = this.normalizeCoord(avgZ);
+            state[offset++] = Math.min(1.0, maxDistance / 30.0);
+            state[offset++] = Math.min(1.0, blockDensity);
+        } else {
+            offset += 5;
+        }
+
+        return offset;
+    }
+
+    /**
+     * Encode enhanced entity data from plugin (30 dimensions)
+     * Source: bot.pluginSensorData.entities with AI state and hostility data
+     */
+    encodePluginEntityData(bot, state, offset) {
+        if (!bot.pluginSensorData || !bot.pluginSensorData.entities) {
+            return offset + 30; // Skip if no data
+        }
+
+        const entities = bot.pluginSensorData.entities;
+
+        // Feature 1-3: Entity type distribution
+        // SAFETY: Filter out entities without type field (plugin may send incomplete data)
+        const hostile = entities.filter(e => e.type && ['ZOMBIE', 'SKELETON', 'SPIDER', 'CREEPER', 'ENDERMAN'].includes(e.type)).length;
+        const passive = entities.filter(e => e.type && ['COW', 'PIG', 'SHEEP', 'CHICKEN'].includes(e.type)).length;
+        const neutral = entities.filter(e => e.type && ['WOLF', 'IRON_GOLEM', 'VILLAGER'].includes(e.type)).length;
+
+        state[offset++] = Math.min(1.0, hostile / 10.0);
+        state[offset++] = Math.min(1.0, passive / 20.0);
+        state[offset++] = Math.min(1.0, neutral / 10.0);
+
+        // Feature 4-8: Closest 5 hostile mobs with distance and health
+        const hostileMobs = entities
+            .filter(e => e.type && ['ZOMBIE', 'SKELETON', 'SPIDER', 'CREEPER', 'ENDERMAN'].includes(e.type))
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5);
+
+        for (let i = 0; i < 5; i++) {
+            if (i < hostileMobs.length) {
+                const mob = hostileMobs[i];
+                state[offset++] = 1.0 - Math.min(1.0, mob.distance / 32.0); // Closer = higher value
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 9-13: Entity health average by type
+        const getAvgHealth = (type) => {
+            const mobs = entities.filter(e => e.type === type);
+            if (mobs.length === 0) return 0;
+            return mobs.reduce((sum, m) => sum + (m.health || 0), 0) / mobs.length / 20.0;
+        };
+
+        state[offset++] = getAvgHealth('ZOMBIE');
+        state[offset++] = getAvgHealth('SKELETON');
+        state[offset++] = getAvgHealth('SPIDER');
+        state[offset++] = getAvgHealth('CREEPER');
+        state[offset++] = getAvgHealth('ENDERMAN');
+
+        // Feature 14-18: Passive mob counts (for farming/breeding)
+        const mobTypes = ['COW', 'PIG', 'SHEEP', 'CHICKEN', 'HORSE'];
+        mobTypes.forEach(type => {
+            const count = entities.filter(e => e.type === type).length;
+            state[offset++] = Math.min(1.0, count / 10.0);
+        });
+
+        // Feature 19-23: Special entities
+        const playerCount = entities.filter(e => e.type === 'PLAYER').length;
+        const villagerCount = entities.filter(e => e.type === 'VILLAGER').length;
+        const itemCount = entities.filter(e => e.type === 'ITEM').length;
+        const xpOrbCount = entities.filter(e => e.type === 'EXPERIENCE_ORB').length;
+        const projectileCount = entities.filter(e => e.type === 'ARROW').length;
+
+        state[offset++] = Math.min(1.0, playerCount / 5.0);
+        state[offset++] = Math.min(1.0, villagerCount / 10.0);
+        state[offset++] = Math.min(1.0, itemCount / 20.0);
+        state[offset++] = Math.min(1.0, xpOrbCount / 10.0);
+        state[offset++] = Math.min(1.0, projectileCount / 5.0);
+
+        // Feature 24-28: Directional threat analysis (which direction has most danger)
+        const threatByQuadrant = [0, 0, 0, 0]; // NE, SE, SW, NW
+        hostileMobs.forEach(mob => {
+            if (mob.x >= 0 && mob.z >= 0) threatByQuadrant[0]++;
+            else if (mob.x >= 0 && mob.z < 0) threatByQuadrant[1]++;
+            else if (mob.x < 0 && mob.z < 0) threatByQuadrant[2]++;
+            else threatByQuadrant[3]++;
+        });
+
+        threatByQuadrant.forEach(threat => {
+            state[offset++] = Math.min(1.0, threat / 5.0);
+        });
+
+        // Feature 29: Total entity count
+        state[offset++] = Math.min(1.0, entities.length / 50.0);
+
+        // Feature 30: Danger score (composite)
+        const dangerScore = (hostile * 2 + projectileCount) / 25.0;
+        state[offset++] = Math.min(1.0, dangerScore);
+
+        return offset;
+    }
+
+    /**
+     * Encode mob AI states from plugin (40 dimensions)
+     * Source: bot.pluginSensorData.mobAI with targeting and goals
+     */
+    encodePluginMobAI(bot, state, offset) {
+        if (!bot.pluginSensorData || !bot.pluginSensorData.mobAI) {
+            return offset + 40; // Skip if no data
+        }
+
+        const mobAI = bot.pluginSensorData.mobAI;
+
+        // Feature 1-5: Targeting status (is bot being targeted?)
+        const targetingMe = mobAI.filter(m => m.targetType === 'PLAYER' && m.targetUUID === bot.uuid).length;
+        const targetingOthers = mobAI.filter(m => m.targetType === 'PLAYER' && m.targetUUID !== bot.uuid).length;
+        const hasNoTarget = mobAI.filter(m => m.targetType === 'NONE').length;
+        const targetingAnimals = mobAI.filter(m => m.targetType === 'ANIMAL').length;
+        const aggressiveMobs = mobAI.filter(m => m.aggressive).length;
+
+        state[offset++] = Math.min(1.0, targetingMe / 5.0); // Critical: Am I being hunted?
+        state[offset++] = Math.min(1.0, targetingOthers / 5.0);
+        state[offset++] = Math.min(1.0, hasNoTarget / 10.0);
+        state[offset++] = Math.min(1.0, targetingAnimals / 5.0);
+        state[offset++] = Math.min(1.0, aggressiveMobs / 10.0);
+
+        // Feature 6-10: Closest 5 mobs targeting me with distance
+        const threatMobs = mobAI
+            .filter(m => m.targetType === 'PLAYER' && m.targetUUID === bot.uuid)
+            .sort((a, b) => a.distance - b.distance)
+            .slice(0, 5);
+
+        for (let i = 0; i < 5; i++) {
+            if (i < threatMobs.length) {
+                state[offset++] = 1.0 - Math.min(1.0, threatMobs[i].distance / 16.0);
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 11-15: AI goal distribution
+        const goalCounts = {};
+        mobAI.forEach(m => {
+            if (m.goal) goalCounts[m.goal] = (goalCounts[m.goal] || 0) + 1;
+        });
+
+        const commonGoals = ['ATTACK', 'WANDER', 'FLEE', 'FOLLOW', 'STAND'];
+        commonGoals.forEach(goal => {
+            const count = goalCounts[goal] || 0;
+            state[offset++] = Math.min(1.0, count / 5.0);
+        });
+
+        // Feature 16-20: Pathfinding status
+        const pathfinding = mobAI.filter(m => m.pathfinding).length;
+        const stuckMobs = mobAI.filter(m => m.stuck).length;
+        const jumpingMobs = mobAI.filter(m => m.jumping).length;
+        const swimmingMobs = mobAI.filter(m => m.swimming).length;
+        const flyingMobs = mobAI.filter(m => m.flying).length;
+
+        state[offset++] = Math.min(1.0, pathfinding / 10.0);
+        state[offset++] = Math.min(1.0, stuckMobs / 5.0);
+        state[offset++] = Math.min(1.0, jumpingMobs / 5.0);
+        state[offset++] = Math.min(1.0, swimmingMobs / 5.0);
+        state[offset++] = Math.min(1.0, flyingMobs / 3.0);
+
+        // Feature 21-25: Mob health distribution
+        const lowHealthMobs = mobAI.filter(m => m.health < 5).length;
+        const medHealthMobs = mobAI.filter(m => m.health >= 5 && m.health < 15).length;
+        const highHealthMobs = mobAI.filter(m => m.health >= 15).length;
+        const avgHealth = mobAI.reduce((sum, m) => sum + m.health, 0) / Math.max(mobAI.length, 1);
+        const minHealth = Math.min(...mobAI.map(m => m.health), 20);
+
+        state[offset++] = Math.min(1.0, lowHealthMobs / 5.0);
+        state[offset++] = Math.min(1.0, medHealthMobs / 10.0);
+        state[offset++] = Math.min(1.0, highHealthMobs / 10.0);
+        state[offset++] = avgHealth / 20.0;
+        state[offset++] = minHealth / 20.0;
+
+        // Feature 26-30: Mob equipment and variants
+        const armoredMobs = mobAI.filter(m => m.hasArmor).length;
+        const weaponMobs = mobAI.filter(m => m.hasWeapon).length;
+        const babyMobs = mobAI.filter(m => m.isBaby).length;
+        const angryMobs = mobAI.filter(m => m.angry).length;
+        const tamedMobs = mobAI.filter(m => m.tamed).length;
+
+        state[offset++] = Math.min(1.0, armoredMobs / 3.0);
+        state[offset++] = Math.min(1.0, weaponMobs / 3.0);
+        state[offset++] = Math.min(1.0, babyMobs / 5.0);
+        state[offset++] = Math.min(1.0, angryMobs / 5.0);
+        state[offset++] = Math.min(1.0, tamedMobs / 3.0);
+
+        // Feature 31-35: Threat assessment by mob type
+        const zombieThreats = mobAI.filter(m => m.type === 'ZOMBIE' && m.targetUUID === bot.uuid).length;
+        const skeletonThreats = mobAI.filter(m => m.type === 'SKELETON' && m.targetUUID === bot.uuid).length;
+        const spiderThreats = mobAI.filter(m => m.type === 'SPIDER' && m.targetUUID === bot.uuid).length;
+        const creeperThreats = mobAI.filter(m => m.type === 'CREEPER' && m.targetUUID === bot.uuid).length;
+        const endermanThreats = mobAI.filter(m => m.type === 'ENDERMAN' && m.targetUUID === bot.uuid).length;
+
+        state[offset++] = Math.min(1.0, zombieThreats / 3.0);
+        state[offset++] = Math.min(1.0, skeletonThreats / 3.0);
+        state[offset++] = Math.min(1.0, spiderThreats / 3.0);
+        state[offset++] = Math.min(1.0, creeperThreats / 2.0); // Creepers are high priority
+        state[offset++] = Math.min(1.0, endermanThreats / 1.0);
+
+        // Feature 36-40: Spatial distribution of AI mobs
+        const nearbyMobs = mobAI.filter(m => m.distance < 8).length;
+        const midRangeMobs = mobAI.filter(m => m.distance >= 8 && m.distance < 16).length;
+        const farMobs = mobAI.filter(m => m.distance >= 16).length;
+        const avgDistance = mobAI.reduce((sum, m) => sum + m.distance, 0) / Math.max(mobAI.length, 1);
+        const minDistance = Math.min(...mobAI.map(m => m.distance), 32);
+
+        state[offset++] = Math.min(1.0, nearbyMobs / 5.0);
+        state[offset++] = Math.min(1.0, midRangeMobs / 10.0);
+        state[offset++] = Math.min(1.0, farMobs / 10.0);
+        state[offset++] = Math.min(1.0, avgDistance / 32.0);
+        state[offset++] = Math.min(1.0, minDistance / 32.0);
+
+        return offset;
+    }
+
+    /**
+     * Encode enhanced weather data from plugin (10 dimensions)
+     * Source: bot.pluginSensorData.weather with duration and time data
+     */
+    encodePluginWeather(bot, state, offset) {
+        if (!bot.pluginSensorData || !bot.pluginSensorData.weather) {
+            return offset + 10; // Skip if no data
+        }
+
+        const weather = bot.pluginSensorData.weather;
+
+        // Feature 1-2: Basic weather state
+        state[offset++] = weather.hasStorm ? 1.0 : 0.0;
+        state[offset++] = weather.isThundering ? 1.0 : 0.0;
+
+        // Feature 3-4: Weather duration (how long has it been raining/thundering?)
+        state[offset++] = Math.min(1.0, (weather.rainDuration || 0) / 12000.0); // Normalized to ~10 min
+        state[offset++] = Math.min(1.0, (weather.thunderDuration || 0) / 6000.0);
+
+        // Feature 5: Time of day (more granular than mineflayer)
+        state[offset++] = (weather.time % 24000) / 24000.0;
+
+        // Feature 6-7: Time classification
+        const isDay = weather.time >= 0 && weather.time < 12000;
+        const isNight = weather.time >= 12000 && weather.time < 24000;
+        state[offset++] = isDay ? 1.0 : 0.0;
+        state[offset++] = isNight ? 1.0 : 0.0;
+
+        // Feature 8: Daylight level (0-15)
+        state[offset++] = (weather.skylightLevel || 0) / 15.0;
+
+        // Feature 9: Combined danger from weather (storm + thunder + night)
+        const weatherDanger = (weather.hasStorm ? 0.3 : 0) +
+                             (weather.isThundering ? 0.4 : 0) +
+                             (isNight ? 0.3 : 0);
+        state[offset++] = Math.min(1.0, weatherDanger);
+
+        // Feature 10: Weather change prediction (is weather clearing or worsening?)
+        const weatherTrend = (weather.clearWeatherTime || 0) > (weather.rainTime || 0) ? 0.0 : 1.0;
+        state[offset++] = weatherTrend;
+
+        return offset;
+    }
+
+    /**
+     * Encode enhanced chunk data from plugin (30 dimensions)
+     * Source: bot.pluginSensorData.chunks with loading status
+     */
+    encodePluginChunks(bot, state, offset) {
+        if (!bot.pluginSensorData || !bot.pluginSensorData.chunks) {
+            return offset + 30; // Skip if no data
+        }
+
+        const chunks = bot.pluginSensorData.chunks;
+
+        // Feature 1: Total loaded chunks
+        state[offset++] = Math.min(1.0, (chunks.loadedChunks || 0) / 200.0);
+
+        // Feature 2: Entities in loaded chunks
+        state[offset++] = Math.min(1.0, (chunks.entityCount || 0) / 100.0);
+
+        // Feature 3: Tile entities (chests, furnaces, etc.)
+        state[offset++] = Math.min(1.0, (chunks.tileEntityCount || 0) / 50.0);
+
+        // Feature 4-8: Chunk loading status (adjacent chunks)
+        const adjacent = chunks.adjacentChunks || [];
+        const loaded = adjacent.filter(c => c.loaded).length;
+        const generating = adjacent.filter(c => c.generating).length;
+        const unloaded = adjacent.filter(c => !c.loaded && !c.generating).length;
+        const populated = adjacent.filter(c => c.populated).length;
+        const lightCalculated = adjacent.filter(c => c.lightCalculated).length;
+
+        state[offset++] = Math.min(1.0, loaded / 8.0); // Assume 8 adjacent chunks
+        state[offset++] = Math.min(1.0, generating / 8.0);
+        state[offset++] = Math.min(1.0, unloaded / 8.0);
+        state[offset++] = Math.min(1.0, populated / 8.0);
+        state[offset++] = Math.min(1.0, lightCalculated / 8.0);
+
+        // Feature 9-13: Biome distribution in loaded chunks
+        const biomes = chunks.biomes || [];
+        const biomeTypes = ['plains', 'forest', 'desert', 'mountains', 'ocean'];
+        biomeTypes.forEach(biome => {
+            const count = biomes.filter(b => b.toLowerCase().includes(biome)).length;
+            state[offset++] = Math.min(1.0, count / 10.0);
+        });
+
+        // Feature 14-18: Chunk data by height level
+        const surfaceChunks = chunks.chunksAtHeight?.surface || 0;
+        const undergroundChunks = chunks.chunksAtHeight?.underground || 0;
+        const deepslateChunks = chunks.chunksAtHeight?.deepslate || 0;
+        const bedrockChunks = chunks.chunksAtHeight?.bedrock || 0;
+        const skyChunks = chunks.chunksAtHeight?.sky || 0;
+
+        state[offset++] = Math.min(1.0, surfaceChunks / 20.0);
+        state[offset++] = Math.min(1.0, undergroundChunks / 20.0);
+        state[offset++] = Math.min(1.0, deepslateChunks / 20.0);
+        state[offset++] = Math.min(1.0, bedrockChunks / 5.0);
+        state[offset++] = Math.min(1.0, skyChunks / 10.0);
+
+        // Feature 19-23: Structures in chunks
+        const villages = chunks.structures?.village || 0;
+        const mineshafts = chunks.structures?.mineshaft || 0;
+        const dungeons = chunks.structures?.dungeon || 0;
+        const strongholds = chunks.structures?.stronghold || 0;
+        const monuments = chunks.structures?.monument || 0;
+
+        state[offset++] = Math.min(1.0, villages / 3.0);
+        state[offset++] = Math.min(1.0, mineshafts / 5.0);
+        state[offset++] = Math.min(1.0, dungeons / 5.0);
+        state[offset++] = Math.min(1.0, strongholds / 1.0);
+        state[offset++] = Math.min(1.0, monuments / 1.0);
+
+        // Feature 24-28: Chunk safety metrics
+        const hostileSpawnableChunks = chunks.hostileSpawnable || 0;
+        const passiveSpawnableChunks = chunks.passiveSpawnable || 0;
+        const lightedChunks = chunks.wellLit || 0;
+        const shelterChunks = chunks.hasShelter || 0;
+        const resourceRichChunks = chunks.resourceRich || 0;
+
+        state[offset++] = Math.min(1.0, hostileSpawnableChunks / 20.0);
+        state[offset++] = Math.min(1.0, passiveSpawnableChunks / 20.0);
+        state[offset++] = Math.min(1.0, lightedChunks / 20.0);
+        state[offset++] = Math.min(1.0, shelterChunks / 10.0);
+        state[offset++] = Math.min(1.0, resourceRichChunks / 10.0);
+
+        // Feature 29: Chunk loading performance
+        state[offset++] = Math.min(1.0, (chunks.loadTime || 0) / 1000.0);
+
+        // Feature 30: Chunk exploration score
+        const explorationScore = (loaded + populated) / 16.0;
+        state[offset++] = Math.min(1.0, explorationScore);
+
+        return offset;
+    }
+
+    /**
+     * Encode enhanced dropped item data from plugin (40 dimensions)
+     * Source: bot.pluginSensorData.items with age and metadata
+     */
+    encodePluginItems(bot, state, offset) {
+        if (!bot.pluginSensorData || !bot.pluginSensorData.items) {
+            return offset + 40; // Skip if no data
+        }
+
+        const items = bot.pluginSensorData.items;
+
+        // Feature 1-10: Item type distribution (top 10 item types nearby)
+        const itemCounts = {};
+        items.forEach(i => {
+            if (i.type && i.count != null) {
+                itemCounts[i.type] = (itemCounts[i.type] || 0) + i.count;
+            }
+        });
+        const topItems = Object.entries(itemCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10);
+
+        for (let i = 0; i < 10; i++) {
+            if (i < topItems.length) {
+                const itemIdx = this.ITEM_VOCAB.indexOf(topItems[i][0]);
+                state[offset++] = itemIdx >= 0 ? (itemIdx / this.ITEM_VOCAB.length) : 0;
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 11-15: Valuable item detection
+        const diamondItems = items.filter(i => i.type && i.type.includes('diamond')).length;
+        const ironItems = items.filter(i => i.type && i.type.includes('iron')).length;
+        const goldItems = items.filter(i => i.type && i.type.includes('gold')).length;
+        const toolItems = items.filter(i => i.type && (i.type.includes('pickaxe') || i.type.includes('axe'))).length;
+        const foodItems = items.filter(i => i.type && (i.type.includes('bread') || i.type.includes('beef'))).length;
+
+        state[offset++] = Math.min(1.0, diamondItems / 5.0);
+        state[offset++] = Math.min(1.0, ironItems / 10.0);
+        state[offset++] = Math.min(1.0, goldItems / 10.0);
+        state[offset++] = Math.min(1.0, toolItems / 5.0);
+        state[offset++] = Math.min(1.0, foodItems / 10.0);
+
+        // Feature 16-20: Item age (are items fresh or despawning soon?)
+        const freshItems = items.filter(i => i.age != null && i.age < 1000).length; // < 50 seconds
+        const oldItems = items.filter(i => i.age != null && i.age >= 1000 && i.age < 5000).length;
+        const despawningItems = items.filter(i => i.age != null && i.age >= 5000).length; // > 4 minutes
+        const avgAge = items.reduce((sum, i) => sum + (i.age || 0), 0) / Math.max(items.length, 1);
+        const minAge = Math.min(...items.map(i => i.age || 0), 6000);
+
+        state[offset++] = Math.min(1.0, freshItems / 10.0);
+        state[offset++] = Math.min(1.0, oldItems / 10.0);
+        state[offset++] = Math.min(1.0, despawningItems / 5.0);
+        state[offset++] = Math.min(1.0, avgAge / 6000.0);
+        state[offset++] = Math.min(1.0, minAge / 6000.0);
+
+        // Feature 21-25: Distance to valuable items (closest 5)
+        const valueItems = items
+            .filter(i => i.type && (i.type.includes('diamond') || i.type.includes('iron') || i.type.includes('gold')))
+            .sort((a, b) => (a.distance || 0) - (b.distance || 0))
+            .slice(0, 5);
+
+        for (let i = 0; i < 5; i++) {
+            if (i < valueItems.length) {
+                state[offset++] = 1.0 - Math.min(1.0, valueItems[i].distance / 32.0);
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 26-30: Item stack sizes
+        const smallStacks = items.filter(i => i.count != null && i.count < 10).length;
+        const mediumStacks = items.filter(i => i.count != null && i.count >= 10 && i.count < 32).length;
+        const largeStacks = items.filter(i => i.count != null && i.count >= 32).length;
+        const avgStack = items.reduce((sum, i) => sum + (i.count || 0), 0) / Math.max(items.length, 1);
+        const maxStack = Math.max(...items.map(i => i.count || 0), 1);
+
+        state[offset++] = Math.min(1.0, smallStacks / 10.0);
+        state[offset++] = Math.min(1.0, mediumStacks / 10.0);
+        state[offset++] = Math.min(1.0, largeStacks / 5.0);
+        state[offset++] = Math.min(1.0, avgStack / 64.0);
+        state[offset++] = Math.min(1.0, maxStack / 64.0);
+
+        // Feature 31-35: Spatial distribution
+        if (items.length > 0) {
+            const avgX = items.reduce((sum, i) => sum + (i.x || 0), 0) / items.length;
+            const avgY = items.reduce((sum, i) => sum + (i.y || 0), 0) / items.length;
+            const avgZ = items.reduce((sum, i) => sum + (i.z || 0), 0) / items.length;
+            const spread = Math.max(...items.map(i =>
+                Math.sqrt(Math.pow((i.x || 0) - avgX, 2) + Math.pow((i.y || 0) - avgY, 2) + Math.pow((i.z || 0) - avgZ, 2))
+            ));
+            const density = items.length / 1000.0; // Items per 10x10x10 area
+
+            state[offset++] = this.normalizeCoord(avgX);
+            state[offset++] = this.normalizeCoord(avgY);
+            state[offset++] = this.normalizeCoord(avgZ);
+            state[offset++] = Math.min(1.0, spread / 30.0);
+            state[offset++] = Math.min(1.0, density);
+        } else {
+            offset += 5;
+        }
+
+        // Feature 36-40: Item urgency and pickup priority
+        const urgentItems = items.filter(i => i.age != null && i.age > 5000 && i.type && i.type.includes('diamond')).length;
+        const nearbyValuable = items.filter(i => i.distance != null && i.distance < 5 && i.type && (i.type.includes('diamond') || i.type.includes('iron'))).length;
+        const droppingItems = items.filter(i => i.motionY != null && i.motionY < -0.1).length; // Falling items
+        const burningItems = items.filter(i => i.onFire === true).length;
+        const pickupScore = (nearbyValuable * 2 + urgentItems) / 10.0;
+
+        state[offset++] = Math.min(1.0, urgentItems / 3.0);
+        state[offset++] = Math.min(1.0, nearbyValuable / 5.0);
+        state[offset++] = Math.min(1.0, droppingItems / 5.0);
+        state[offset++] = Math.min(1.0, burningItems / 3.0);
+        state[offset++] = Math.min(1.0, pickupScore);
+
+        return offset;
+    }
+
+    // ============================================================
+    // ADDITIONAL MINEFLAYER DATA ENCODERS
+    // ============================================================
+
+    /**
+     * Encode experience data (5 dimensions)
+     * Source: bot.experience
+     */
+    encodeExperience(bot, state, offset) {
+        if (!bot.experience) {
+            return offset + 5;
+        }
+
+        // Feature 1: Current level
+        state[offset++] = Math.min(1.0, bot.experience.level / 30.0);
+
+        // Feature 2: Points (0-1 for current level)
+        state[offset++] = bot.experience.progress || 0;
+
+        // Feature 3: Total points
+        state[offset++] = Math.min(1.0, (bot.experience.points || 0) / 1000.0);
+
+        // Feature 4: Points needed for next level
+        const pointsNeeded = bot.experience.level < 16 ? 17 :
+                            bot.experience.level < 31 ? 97 : 277;
+        state[offset++] = Math.min(1.0, pointsNeeded / 300.0);
+
+        // Feature 5: XP farming efficiency (levels per minute - needs tracking)
+        const xpRate = (bot.experience.level || 0) / Math.max((Date.now() - (bot.spawnTime || Date.now())) / 60000, 0.1);
+        state[offset++] = Math.min(1.0, xpRate / 5.0);
+
+        return offset;
+    }
+
+    /**
+     * Encode control state (15 dimensions)
+     * Source: bot.controlState
+     */
+    encodeControlState(bot, state, offset) {
+        if (!bot.controlState) {
+            return offset + 15;
+        }
+
+        const ctrl = bot.controlState;
+
+        // Feature 1-8: Movement controls
+        state[offset++] = ctrl.forward ? 1.0 : 0.0;
+        state[offset++] = ctrl.back ? 1.0 : 0.0;
+        state[offset++] = ctrl.left ? 1.0 : 0.0;
+        state[offset++] = ctrl.right ? 1.0 : 0.0;
+        state[offset++] = ctrl.jump ? 1.0 : 0.0;
+        state[offset++] = ctrl.sprint ? 1.0 : 0.0;
+        state[offset++] = ctrl.sneak ? 1.0 : 0.0;
+        state[offset++] = (ctrl.forward && ctrl.sprint) ? 1.0 : 0.0; // Sprinting forward
+
+        // Feature 9-11: View direction
+        state[offset++] = Math.max(-1, Math.min(1, (bot.entity.yaw || 0) / Math.PI));
+        state[offset++] = Math.max(-1, Math.min(1, (bot.entity.pitch || 0) / (Math.PI / 2)));
+        const lookingDown = (bot.entity.pitch || 0) > 0.5 ? 1.0 : 0.0;
+        state[offset++] = lookingDown;
+
+        // Feature 12-14: Velocity
+        const vel = bot.entity.velocity;
+        state[offset++] = Math.max(-1, Math.min(1, vel.x / 10.0));
+        state[offset++] = Math.max(-1, Math.min(1, vel.y / 10.0));
+        state[offset++] = Math.max(-1, Math.min(1, vel.z / 10.0));
+
+        // Feature 15: Is moving
+        const isMoving = Math.sqrt(vel.x ** 2 + vel.z ** 2) > 0.1 ? 1.0 : 0.0;
+        state[offset++] = isMoving;
+
+        return offset;
+    }
+
+    /**
+     * Encode potion effects (20 dimensions)
+     * Source: bot.entity.effects
+     */
+    encodeEffects(bot, state, offset) {
+        if (!bot.entity || !bot.entity.effects) {
+            return offset + 20;
+        }
+
+        const effects = bot.entity.effects;
+
+        // Define important effect IDs and their slots
+        const effectSlots = [
+            1,  // Speed
+            2,  // Slowness
+            3,  // Haste
+            4,  // Mining Fatigue
+            5,  // Strength
+            6,  // Instant Health
+            7,  // Instant Damage
+            8,  // Jump Boost
+            9,  // Nausea
+            10, // Regeneration
+            11, // Resistance
+            12, // Fire Resistance
+            13, // Water Breathing
+            14, // Invisibility
+            15, // Blindness
+            16, // Night Vision
+            17, // Hunger
+            18, // Weakness
+            19, // Poison
+            20  // Wither
+        ];
+
+        effectSlots.forEach(id => {
+            const effect = Object.values(effects).find(e => e.id === id);
+            if (effect) {
+                // Encode amplifier (strength) normalized
+                state[offset++] = Math.min(1.0, (effect.amplifier || 0) / 3.0);
+            } else {
+                state[offset++] = 0;
+            }
+        });
+
+        return offset;
+    }
+
+    /**
+     * Encode equipment durability (15 dimensions)
+     * Source: bot.inventory armor slots
+     */
+    encodeEquipment(bot, state, offset) {
+        // Feature 1-4: Armor durability
+        const helmet = bot.inventory.slots[5];
+        const chestplate = bot.inventory.slots[6];
+        const leggings = bot.inventory.slots[7];
+        const boots = bot.inventory.slots[8];
+
+        const getDurability = (item) => {
+            if (!item || !item.maxDurability) return 0;
+            return (item.maxDurability - (item.durabilityUsed || 0)) / item.maxDurability;
+        };
+
+        state[offset++] = getDurability(helmet);
+        state[offset++] = getDurability(chestplate);
+        state[offset++] = getDurability(leggings);
+        state[offset++] = getDurability(boots);
+
+        // Feature 5: Average armor durability
+        const avgArmorDur = (getDurability(helmet) + getDurability(chestplate) +
+                            getDurability(leggings) + getDurability(boots)) / 4.0;
+        state[offset++] = avgArmorDur;
+
+        // Feature 6-9: Armor enchantment presence (simplified)
+        state[offset++] = (helmet && helmet.enchants && helmet.enchants.length > 0) ? 1.0 : 0.0;
+        state[offset++] = (chestplate && chestplate.enchants && chestplate.enchants.length > 0) ? 1.0 : 0.0;
+        state[offset++] = (leggings && leggings.enchants && leggings.enchants.length > 0) ? 1.0 : 0.0;
+        state[offset++] = (boots && boots.enchants && boots.enchants.length > 0) ? 1.0 : 0.0;
+
+        // Feature 10: Held item durability
+        const heldItem = bot.heldItem;
+        state[offset++] = getDurability(heldItem);
+
+        // Feature 11: Held item enchantment
+        state[offset++] = (heldItem && heldItem.enchants && heldItem.enchants.length > 0) ? 1.0 : 0.0;
+
+        // Feature 12: Off-hand item presence
+        const offHand = bot.inventory.slots[45];
+        state[offset++] = offHand ? 1.0 : 0.0;
+
+        // Feature 13-14: Equipment completeness
+        const armorPieces = [helmet, chestplate, leggings, boots].filter(item => item !== null).length;
+        state[offset++] = armorPieces / 4.0;
+        const hasFullArmor = armorPieces === 4 ? 1.0 : 0.0;
+        state[offset++] = hasFullArmor;
+
+        // Feature 15: Equipment quality (iron/diamond/netherite)
+        const hasIronArmor = [helmet, chestplate, leggings, boots].some(item =>
+            item && item.name.includes('iron'));
+        state[offset++] = hasIronArmor ? 0.5 : 0.0;
+
+        return offset;
+    }
+
+    /**
+     * Encode nearby players (10 dimensions)
+     * Source: bot.players
+     */
+    encodeNearbyPlayers(bot, state, offset) {
+        if (!bot.players) {
+            return offset + 10;
+        }
+
+        const players = Object.values(bot.players).filter(p =>
+            p.entity && p.username !== bot.username &&
+            p.entity.position && p.entity.position.distanceTo(bot.entity.position) < 32
+        );
+
+        // Feature 1: Player count
+        state[offset++] = Math.min(1.0, players.length / 10.0);
+
+        // Feature 2-6: Closest 5 players distance
+        const sortedPlayers = players.sort((a, b) =>
+            a.entity.position.distanceTo(bot.entity.position) -
+            b.entity.position.distanceTo(bot.entity.position)
+        ).slice(0, 5);
+
+        for (let i = 0; i < 5; i++) {
+            if (i < sortedPlayers.length) {
+                const dist = sortedPlayers[i].entity.position.distanceTo(bot.entity.position);
+                state[offset++] = 1.0 - Math.min(1.0, dist / 32.0);
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 7: Closest player distance
+        if (players.length > 0) {
+            const closestDist = players[0].entity.position.distanceTo(bot.entity.position);
+            state[offset++] = 1.0 - Math.min(1.0, closestDist / 32.0);
+        } else {
+            state[offset++] = 0;
+        }
+
+        // Feature 8: Players in combat range (< 5 blocks)
+        const inCombatRange = players.filter(p =>
+            p.entity.position.distanceTo(bot.entity.position) < 5
+        ).length;
+        state[offset++] = Math.min(1.0, inCombatRange / 3.0);
+
+        // Feature 9: Players in communication range (< 16 blocks)
+        const inCommRange = players.filter(p =>
+            p.entity.position.distanceTo(bot.entity.position) < 16
+        ).length;
+        state[offset++] = Math.min(1.0, inCommRange / 5.0);
+
+        // Feature 10: Is alone (no players within 32 blocks)
+        state[offset++] = players.length === 0 ? 1.0 : 0.0;
 
         return offset;
     }
