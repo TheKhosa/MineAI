@@ -111,6 +111,7 @@ This project creates self-evolving AI agents in Minecraft that:
   - **Advanced Navigation** (15): Swimming, climbing, parkour, pillaring
   - **Resource Optimization** (10): Tool selection, efficient mining strategies
   - **Communication** (8): Agent signaling, formation coordination
+  - **Architecture**: Modular design with `ActionUtils` preventing circular references
 
 - **Dense reward shaping** with psychological modulation:
   - Survival, exploration, cooperation rewards
@@ -443,6 +444,13 @@ enableSocialRewards: true     // Cooperation bonuses
 - Verify `online-mode=false` in server.properties
 - Check console for UUID fetch errors
 
+### "Maximum call stack size exceeded" Errors (FIXED)
+- **Fixed in v1.1.0** - Circular references in action modules resolved
+- If you see this error on older versions:
+  - Update to latest version: `git pull`
+  - Run `npm install` to ensure dependencies are current
+- The fix introduced `ActionUtils` class to prevent infinite recursion
+
 ### Model Save Errors (Normal)
 - Pure JS TensorFlow doesn't support file:// protocol
 - Models train successfully in-memory
@@ -450,22 +458,48 @@ enableSocialRewards: true     // Cooperation bonuses
 - No action needed - system handles gracefully
 
 ### Performance Issues
-- Reduce `MAX_WORKERS` in configuration
-- Ensure `USE_THREADING = true` for multi-core usage
+- Reduce `maxAgents` in config.js (default: 20)
+- Ensure `threading.enabled: true` for multi-core usage
 - Check CPU usage - should distribute across cores
-- Increase Node.js memory: `node --max-old-space-size=8192 intelligent_village.js`
+- Increase Node.js memory: `node --max-old-space-size=8192 server.js`
 
 ### Dashboard Not Loading
 - Verify port 3000 is available
-- Check `dashboard.js` is running
+- Check dashboard is enabled in config.js (`dashboard.enabled: true`)
 - View console for Socket.IO connection errors
 - Try: `http://localhost:3000` in browser
+- **Note**: Dashboard is disabled by default to prevent config interference
 
 ### Chat LLM Errors
 - System falls back to mock (rule-based) automatically
 - First run downloads Llama-3.2-1B model (~1.24GB)
 - Set `llm.enabled: false` in config.js to disable chat for development
 - Ensure internet connection for initial model download
+
+### Agents Stuck/Not Acting
+- Check for "decision error" messages in console
+- Verify ML system initialized successfully
+- Check idle penalty is enabled: `features.enableIdlePenalty: true`
+- Monitor rewards - agents should show positive progress over time
+
+---
+
+## 📝 Recent Changes
+
+### v1.1.0 (2025-10-18) - Critical Bug Fix
+- **FIXED**: Circular reference causing stack overflow in action modules
+- **NEW**: `ActionUtils` class separates shared utilities from ActionSpace
+- **IMPROVED**: All 216 actions now execute without recursion errors
+- **IMPROVED**: Agent decision-making loop stability
+- **PERFORMANCE**: Eliminated infinite recursion preventing agent actions
+
+### v1.0.0 - Initial Release
+- 216-action ML system with modular architecture
+- Genetic evolution with lineage tracking
+- Llama-3.2-1B chat integration
+- Multi-threaded worker pools (1000+ agents)
+- SQLite episodic memory system
+- Emergent cooperation and village formation
 
 ---
 
