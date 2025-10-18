@@ -8,8 +8,8 @@ const { goals } = require('mineflayer-pathfinder');
 const { GoalNear, GoalFollow, GoalXZ } = goals;
 
 class Communication {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     // 208: Drop Item Signal - Drop specific item as signal
@@ -123,7 +123,7 @@ class Communication {
     // 213: Form Line - Line up with nearby agents
     async formLine(bot) {
         try {
-            const agents = this.actionSpace.getNearbyAgents(bot, 16);
+            const agents = this.utils.getNearbyAgents(bot, 16);
 
             if (agents.length > 0) {
                 // Calculate line formation
@@ -147,7 +147,7 @@ class Communication {
     // 214: Form Circle - Circle formation around a point
     async formCircle(bot) {
         try {
-            const agents = this.actionSpace.getNearbyAgents(bot, 16);
+            const agents = this.utils.getNearbyAgents(bot, 16);
 
             if (agents.length > 0) {
                 // Calculate circle center
@@ -182,7 +182,7 @@ class Communication {
     // 215: Follow Leader - Follow the closest agent
     async followLeader(bot) {
         try {
-            const agents = this.actionSpace.getNearbyAgents(bot, 32);
+            const agents = this.utils.getNearbyAgents(bot, 32);
 
             if (agents.length > 0) {
                 const leader = agents[0]; // Closest agent

@@ -6,8 +6,8 @@
 const Vec3 = require('vec3');
 
 class CraftingActions {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     /**
@@ -22,7 +22,7 @@ class CraftingActions {
         if (craftingTable) {
             const { GoalNear } = require('mineflayer-pathfinder').goals;
             bot.pathfinder.setGoal(new GoalNear(craftingTable.position.x, craftingTable.position.y, craftingTable.position.z, 3), true);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             return craftingTable;
         }
         return null;
@@ -225,7 +225,7 @@ class CraftingActions {
             const recipe = bot.recipesFor(bot.registry.itemsByName[piece].id, null, 1, craftingTable)[0];
             if (recipe) {
                 await bot.craft(recipe, 1, craftingTable);
-                await this.actionSpace.sleep(200);
+                await this.utils.sleep(200);
             }
         }
     }
@@ -250,7 +250,7 @@ class CraftingActions {
             const recipe = bot.recipesFor(bot.registry.itemsByName[piece].id, null, 1, craftingTable)[0];
             if (recipe) {
                 await bot.craft(recipe, 1, craftingTable);
-                await this.actionSpace.sleep(200);
+                await this.utils.sleep(200);
             }
         }
     }
@@ -401,13 +401,13 @@ class CraftingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(furnace.position.x, furnace.position.y, furnace.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const furnaceWindow = await bot.openFurnace(furnace);
             await furnaceWindow.putInput(ironOre.type, null, 1);
             await furnaceWindow.putFuel(fuel.type, null, 1);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             furnaceWindow.close();
         } catch (err) {
             // Furnace operation failed
@@ -440,13 +440,13 @@ class CraftingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(furnace.position.x, furnace.position.y, furnace.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const furnaceWindow = await bot.openFurnace(furnace);
             await furnaceWindow.putInput(goldOre.type, null, 1);
             await furnaceWindow.putFuel(fuel.type, null, 1);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             furnaceWindow.close();
         } catch (err) {
             // Furnace operation failed
@@ -480,13 +480,13 @@ class CraftingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(furnace.position.x, furnace.position.y, furnace.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const furnaceWindow = await bot.openFurnace(furnace);
             await furnaceWindow.putInput(rawFood.type, null, Math.min(rawFood.count, 8));
             await furnaceWindow.putFuel(fuel.type, null, 2);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             furnaceWindow.close();
         } catch (err) {
             // Furnace operation failed

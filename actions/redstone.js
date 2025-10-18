@@ -6,8 +6,8 @@
 const Vec3 = require('vec3');
 
 class RedstoneActions {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     /**
@@ -25,11 +25,11 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(lever.position.x, lever.position.y, lever.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.activateBlock(lever);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Lever activation failed
         }
@@ -53,11 +53,11 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(button.position.x, button.position.y, button.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.activateBlock(button);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Button press failed
         }
@@ -81,7 +81,7 @@ class RedstoneActions {
 
         const { GoalBlock } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalBlock(pressurePlate.position.x, pressurePlate.position.y + 1, pressurePlate.position.z), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
     }
 
     /**
@@ -107,14 +107,14 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(placeableBlock.position.x, placeableBlock.position.y, placeableBlock.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         await bot.equip(redstone, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         try {
             await bot.placeBlock(placeableBlock, new Vec3(0, 1, 0));
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Placement failed
         }
@@ -143,14 +143,14 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(placeableBlock.position.x, placeableBlock.position.y, placeableBlock.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         await bot.equip(repeater, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         try {
             await bot.placeBlock(placeableBlock, new Vec3(0, 1, 0));
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Placement failed
         }
@@ -174,11 +174,11 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(door.position.x, door.position.y, door.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.activateBlock(door);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Door opening failed
         }
@@ -202,11 +202,11 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(door.position.x, door.position.y, door.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.activateBlock(door);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Door closing failed
         }
@@ -227,11 +227,11 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(trapdoor.position.x, trapdoor.position.y, trapdoor.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.activateBlock(trapdoor);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Trapdoor operation failed
         }
@@ -252,11 +252,11 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(fenceGate.position.x, fenceGate.position.y, fenceGate.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.activateBlock(fenceGate);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Fence gate operation failed
         }
@@ -277,17 +277,17 @@ class RedstoneActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(hopper.position.x, hopper.position.y, hopper.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const hopperWindow = await bot.openContainer(hopper);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
 
             // Transfer some items if we have any
             const items = bot.inventory.items();
             if (items.length > 0 && items[0].count > 1) {
                 await hopperWindow.deposit(items[0].type, null, 1);
-                await this.actionSpace.sleep(300);
+                await this.utils.sleep(300);
             }
 
             hopperWindow.close();

@@ -6,8 +6,8 @@
 const Vec3 = require('vec3');
 
 class InventoryActions {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     /**
@@ -23,7 +23,7 @@ class InventoryActions {
                 // Keep some, toss excess
                 const tossAmount = Math.floor(item.count / 2);
                 await bot.toss(item.type, null, tossAmount);
-                await this.actionSpace.sleep(100);
+                await this.utils.sleep(100);
             }
         }
     }
@@ -226,7 +226,7 @@ class InventoryActions {
             // Keep best, toss rest
             for (let i = 1; i < tools.length; i++) {
                 await bot.toss(tools[i].type, null, tools[i].count);
-                await this.actionSpace.sleep(100);
+                await this.utils.sleep(100);
             }
         }
     }
@@ -278,7 +278,7 @@ class InventoryActions {
             const nearest = items[0];
             const { GoalNear } = require('mineflayer-pathfinder').goals;
             bot.pathfinder.setGoal(new GoalNear(nearest.position.x, nearest.position.y, nearest.position.z, 1), true);
-            await this.actionSpace.sleep(1000);
+            await this.utils.sleep(1000);
         }
 
         // Then organize (sort)

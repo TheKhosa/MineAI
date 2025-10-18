@@ -8,8 +8,8 @@ const { goals } = require('mineflayer-pathfinder');
 const { GoalNear, GoalFollow, GoalBlock } = goals;
 
 class CombatAdvanced {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     // 171: Critical Hit - Jump + attack for critical damage
@@ -23,7 +23,7 @@ class CombatAdvanced {
 
         if (target) {
             try {
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
                 // Jump and attack while falling for critical hit
                 bot.setControlState('jump', true);
                 await this.sleep(100);
@@ -123,7 +123,7 @@ class CombatAdvanced {
 
         if (target) {
             try {
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
                 // Execute 3-hit combo with proper timing
                 await bot.attack(target);
                 await this.sleep(600); // Wait for attack cooldown
@@ -147,7 +147,7 @@ class CombatAdvanced {
 
         if (target) {
             try {
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
                 const dist = target.position.distanceTo(bot.entity.position);
 
                 if (dist < 3) {
@@ -182,7 +182,7 @@ class CombatAdvanced {
 
         if (target) {
             try {
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
 
                 // Calculate position to circle around target
                 const direction = bot.entity.position.minus(target.position).normalize();
@@ -215,7 +215,7 @@ class CombatAdvanced {
 
         if (target) {
             try {
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
 
                 // Calculate position behind target
                 // Assume target is facing roughly toward us
@@ -247,7 +247,7 @@ class CombatAdvanced {
 
         if (target) {
             try {
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
 
                 // Sprint toward target
                 bot.setControlState('sprint', true);
@@ -306,7 +306,7 @@ class CombatAdvanced {
                     await bot.equip(shield, 'off-hand');
                 }
 
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
                 const target = hostiles[0];
 
                 // Defensive pattern: attack, block, retreat
@@ -347,7 +347,7 @@ class CombatAdvanced {
 
         if (target) {
             try {
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
 
                 // Aggressive pattern: sprint toward target and attack constantly
                 bot.pathfinder.setGoal(new GoalNear(target.position.x, target.position.y, target.position.z, 2), true);

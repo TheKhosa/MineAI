@@ -8,8 +8,8 @@ const { goals } = require('mineflayer-pathfinder');
 const { GoalNear, GoalBlock, GoalXZ } = goals;
 
 class Optimization {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     // 198: Select Optimal Tool - Choose best tool for block type
@@ -40,7 +40,7 @@ class Optimization {
                 await bot.equip(bestTool, 'hand');
             } else {
                 // Fall back to best available tool
-                await this.actionSpace.equipBestTool(bot);
+                await this.utils.equipBestTool(bot);
             }
         } catch (error) {
             // Tool selection failed
@@ -203,7 +203,7 @@ class Optimization {
         try {
             // Go to Y=11 (diamond level)
             if (bot.entity.position.y > 11) {
-                await this.actionSpace.digDown(bot);
+                await this.utils.digDown(bot);
             } else if (bot.entity.position.y < 11) {
                 // Build up to Y=11
                 const blockItem = bot.inventory.items().find(item =>
@@ -218,7 +218,7 @@ class Optimization {
                 }
             } else {
                 // At Y=11 - mine forward
-                await this.actionSpace.digForward(bot);
+                await this.utils.digForward(bot);
                 bot.setControlState('forward', true);
                 await this.sleep(500);
                 bot.setControlState('forward', false);
@@ -236,7 +236,7 @@ class Optimization {
 
             // Mine forward for 3 blocks
             for (let i = 0; i < 3; i++) {
-                await this.actionSpace.digForward(bot);
+                await this.utils.digForward(bot);
                 bot.setControlState('forward', true);
                 await this.sleep(400);
                 bot.setControlState('forward', false);
@@ -250,7 +250,7 @@ class Optimization {
 
             // Mine the branch
             for (let i = 0; i < 5; i++) {
-                await this.actionSpace.digForward(bot);
+                await this.utils.digForward(bot);
                 bot.setControlState('forward', true);
                 await this.sleep(400);
                 bot.setControlState('forward', false);
@@ -269,7 +269,7 @@ class Optimization {
                 await this.efficientMining(bot);
             } else {
                 // Go underground first
-                await this.actionSpace.digDown(bot);
+                await this.utils.digDown(bot);
             }
 
             // Follow cave systems

@@ -23,21 +23,27 @@ const {
     CommunicationActions
 } = require('./actions');
 
+// Import action utilities to prevent circular references
+const ActionUtils = require('./actions/action_utils');
+
 class ActionSpace {
     constructor() {
-        // Initialize action modules
-        this.inventoryActions = new InventoryActions(this);
-        this.craftingActions = new CraftingActions(this);
-        this.containerActions = new ContainerActions(this);
-        this.enchantingActions = new EnchantingActions(this);
-        this.tradingActions = new TradingActions(this);
-        this.agricultureActions = new AgricultureActions(this);
-        this.redstoneActions = new RedstoneActions(this);
-        this.bedActions = new BedActions(this);
-        this.combatAdvancedActions = new CombatAdvancedActions(this);
-        this.navigationActions = new NavigationActions(this);
-        this.optimizationActions = new OptimizationActions(this);
-        this.communicationActions = new CommunicationActions(this);
+        // Create shared utility instance (prevents circular references)
+        this.utils = new ActionUtils();
+
+        // Initialize action modules with utilities instead of 'this'
+        this.inventoryActions = new InventoryActions(this.utils);
+        this.craftingActions = new CraftingActions(this.utils);
+        this.containerActions = new ContainerActions(this.utils);
+        this.enchantingActions = new EnchantingActions(this.utils);
+        this.tradingActions = new TradingActions(this.utils);
+        this.agricultureActions = new AgricultureActions(this.utils);
+        this.redstoneActions = new RedstoneActions(this.utils);
+        this.bedActions = new BedActions(this.utils);
+        this.combatAdvancedActions = new CombatAdvancedActions(this.utils);
+        this.navigationActions = new NavigationActions(this.utils);
+        this.optimizationActions = new OptimizationActions(this.utils);
+        this.communicationActions = new CommunicationActions(this.utils);
 
         // Bind modular action methods (76-215)
         // Inventory Management (76-90)

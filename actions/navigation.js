@@ -8,8 +8,8 @@ const { goals } = require('mineflayer-pathfinder');
 const { GoalNear, GoalBlock, GoalXZ, GoalY } = goals;
 
 class Navigation {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     // 183: Swim Forward - Forward swimming controls
@@ -339,7 +339,7 @@ class Navigation {
                 await this.sleep(2000);
 
                 // Look for openings
-                await this.actionSpace.lookAround(bot);
+                await this.utils.lookAround(bot);
             } else {
                 // Explore randomly
                 const angle = Math.random() * Math.PI * 2;

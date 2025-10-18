@@ -6,8 +6,8 @@
 const Vec3 = require('vec3');
 
 class AgricultureActions {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     /**
@@ -34,16 +34,16 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(farmland.position.x, farmland.position.y, farmland.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         await bot.equip(seeds, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         try {
             const airAbove = bot.blockAt(farmland.position.offset(0, 1, 0));
             if (airAbove && airAbove.name === 'air') {
                 await bot.placeBlock(farmland, new Vec3(0, 1, 0));
-                await this.actionSpace.sleep(300);
+                await this.utils.sleep(300);
             }
         } catch (err) {
             // Planting failed
@@ -65,11 +65,11 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(wheat.position.x, wheat.position.y, wheat.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.dig(wheat);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Harvesting failed
         }
@@ -90,11 +90,11 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(carrots.position.x, carrots.position.y, carrots.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.dig(carrots);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Harvesting failed
         }
@@ -115,11 +115,11 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(potatoes.position.x, potatoes.position.y, potatoes.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.dig(potatoes);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Harvesting failed
         }
@@ -147,27 +147,27 @@ class AgricultureActions {
         }
 
         await bot.equip(wheat, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         // Feed first cow
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(cows[0].position.x, cows[0].position.y, cows[0].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(cows[0]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
 
         // Feed second cow
         bot.pathfinder.setGoal(new GoalNear(cows[1].position.x, cows[1].position.y, cows[1].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(cows[1]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
@@ -195,25 +195,25 @@ class AgricultureActions {
         }
 
         await bot.equip(carrot, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(pigs[0].position.x, pigs[0].position.y, pigs[0].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(pigs[0]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
 
         bot.pathfinder.setGoal(new GoalNear(pigs[1].position.x, pigs[1].position.y, pigs[1].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(pigs[1]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
@@ -241,25 +241,25 @@ class AgricultureActions {
         }
 
         await bot.equip(wheat, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(sheep[0].position.x, sheep[0].position.y, sheep[0].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(sheep[0]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
 
         bot.pathfinder.setGoal(new GoalNear(sheep[1].position.x, sheep[1].position.y, sheep[1].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(sheep[1]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
@@ -290,25 +290,25 @@ class AgricultureActions {
         }
 
         await bot.equip(seeds, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(chickens[0].position.x, chickens[0].position.y, chickens[0].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(chickens[0]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
 
         bot.pathfinder.setGoal(new GoalNear(chickens[1].position.x, chickens[1].position.y, chickens[1].position.z, 2), true);
-        await this.actionSpace.sleep(800);
+        await this.utils.sleep(800);
 
         try {
             await bot.activateEntity(chickens[1]);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Feeding failed
         }
@@ -340,14 +340,14 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(targetSheep.position.x, targetSheep.position.y, targetSheep.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         await bot.equip(shears, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         try {
             await bot.activateEntity(targetSheep);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Shearing failed
         }
@@ -378,14 +378,14 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(cow.position.x, cow.position.y, cow.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         await bot.equip(bucket, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         try {
             await bot.activateEntity(cow);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Milking failed
         }
@@ -414,14 +414,14 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(crop.position.x, crop.position.y, crop.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         await bot.equip(boneMeal, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         try {
             await bot.activateBlock(crop);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Bone meal application failed
         }
@@ -450,14 +450,14 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(dirt.position.x, dirt.position.y, dirt.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         await bot.equip(hoe, 'hand');
-        await this.actionSpace.sleep(200);
+        await this.utils.sleep(200);
 
         try {
             await bot.activateBlock(dirt);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
         } catch (err) {
             // Tilling failed
         }
@@ -491,10 +491,10 @@ class AgricultureActions {
                 try {
                     const { GoalNear } = require('mineflayer-pathfinder').goals;
                     bot.pathfinder.setGoal(new GoalNear(pos.x, pos.y, pos.z, 3), true);
-                    await this.actionSpace.sleep(300);
+                    await this.utils.sleep(300);
 
                     await bot.activateBlock(block);
-                    await this.actionSpace.sleep(200);
+                    await this.utils.sleep(200);
                 } catch (err) {
                     // Tilling failed
                 }
@@ -517,7 +517,7 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(water.position.x, water.position.y, water.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
     }
 
     /**
@@ -541,7 +541,7 @@ class AgricultureActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(nearestEgg.position.x, nearestEgg.position.y, nearestEgg.position.z, 1), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
     }
 }
 

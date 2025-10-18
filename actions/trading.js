@@ -6,8 +6,8 @@
 const Vec3 = require('vec3');
 
 class TradingActions {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     /**
@@ -32,7 +32,7 @@ class TradingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(nearestVillager.position.x, nearestVillager.position.y, nearestVillager.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
     }
 
     /**
@@ -55,7 +55,7 @@ class TradingActions {
 
         try {
             const tradeWindow = await bot.openVillager(villager);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             tradeWindow.close();
         } catch (err) {
             // Failed to open trade window
@@ -82,7 +82,7 @@ class TradingActions {
 
         try {
             const tradeWindow = await bot.openVillager(villager);
-            await this.actionSpace.sleep(300);
+            await this.utils.sleep(300);
 
             // Find first available trade
             if (tradeWindow.trades && tradeWindow.trades.length > 0) {
@@ -94,7 +94,7 @@ class TradingActions {
 
                 if (hasInputA && (!trade.inputItem2 || hasInputB)) {
                     await tradeWindow.trade(0, 1);
-                    await this.actionSpace.sleep(500);
+                    await this.utils.sleep(500);
                 }
             }
 
@@ -124,11 +124,11 @@ class TradingActions {
         for (const villager of villagers.slice(0, 3)) {
             const { GoalNear } = require('mineflayer-pathfinder').goals;
             bot.pathfinder.setGoal(new GoalNear(villager.position.x, villager.position.y, villager.position.z, 2), true);
-            await this.actionSpace.sleep(800);
+            await this.utils.sleep(800);
 
             try {
                 const tradeWindow = await bot.openVillager(villager);
-                await this.actionSpace.sleep(300);
+                await this.utils.sleep(300);
 
                 // Look for valuable trades (diamond gear, enchanted books, etc.)
                 if (tradeWindow.trades && tradeWindow.trades.length > 0) {
@@ -183,20 +183,20 @@ class TradingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(zombieVillager.position.x, zombieVillager.position.y, zombieVillager.position.z, 4), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             // Throw splash potion
             await bot.equip(splashPotion, 'hand');
-            await this.actionSpace.sleep(200);
+            await this.utils.sleep(200);
             await bot.activateItem();
-            await this.actionSpace.sleep(1000);
+            await this.utils.sleep(1000);
 
             // Use golden apple on zombie villager
             await bot.equip(goldenApple, 'hand');
-            await this.actionSpace.sleep(200);
+            await this.utils.sleep(200);
             await bot.activateEntity(zombieVillager);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Curing failed
         }
@@ -239,7 +239,7 @@ class TradingActions {
         // Move between villager and threat
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(threat.position.x, threat.position.y, threat.position.z, 2), true);
-        await this.actionSpace.sleep(500);
+        await this.utils.sleep(500);
 
         // Equip weapon
         const weapon = bot.inventory.items().find(item =>
@@ -247,13 +247,13 @@ class TradingActions {
         );
         if (weapon) {
             await bot.equip(weapon, 'hand');
-            await this.actionSpace.sleep(100);
+            await this.utils.sleep(100);
         }
 
         // Attack threat
         try {
             await bot.attack(threat);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Attack failed
         }
@@ -308,7 +308,7 @@ class TradingActions {
                 if (referenceBlock && referenceBlock.name !== 'air') {
                     try {
                         await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
-                        await this.actionSpace.sleep(300);
+                        await this.utils.sleep(300);
                     } catch (err) {
                         // Placement failed
                     }
@@ -332,7 +332,7 @@ class TradingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(emeraldOre.position.x, emeraldOre.position.y, emeraldOre.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         const pickaxe = bot.inventory.items().find(item =>
             item.name.includes('pickaxe') && (item.name.includes('iron') || item.name.includes('diamond'))
@@ -340,12 +340,12 @@ class TradingActions {
 
         if (pickaxe) {
             await bot.equip(pickaxe, 'hand');
-            await this.actionSpace.sleep(100);
+            await this.utils.sleep(100);
         }
 
         try {
             await bot.dig(emeraldOre);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Mining failed
         }

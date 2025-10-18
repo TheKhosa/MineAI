@@ -6,8 +6,8 @@
 const Vec3 = require('vec3');
 
 class BedActions {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     /**
@@ -33,11 +33,11 @@ class BedActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             await bot.sleep(bed);
-            await this.actionSpace.sleep(2000);
+            await this.utils.sleep(2000);
         } catch (err) {
             // Sleep failed (might not be night, bed occupied, or monsters nearby)
         }
@@ -50,7 +50,7 @@ class BedActions {
         if (bot.isSleeping) {
             try {
                 await bot.wake();
-                await this.actionSpace.sleep(500);
+                await this.utils.sleep(500);
             } catch (err) {
                 // Wake failed
             }
@@ -72,7 +72,7 @@ class BedActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(bed.position.x, bed.position.y, bed.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
     }
 
     /**
@@ -90,7 +90,7 @@ class BedActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         // Check if it's night or we can sleep
         const timeOfDay = bot.time.timeOfDay;
@@ -99,9 +99,9 @@ class BedActions {
         if (isNight) {
             try {
                 await bot.sleep(bed);
-                await this.actionSpace.sleep(1000);
+                await this.utils.sleep(1000);
                 await bot.wake();
-                await this.actionSpace.sleep(500);
+                await this.utils.sleep(500);
             } catch (err) {
                 // Claim failed
             }
@@ -109,7 +109,7 @@ class BedActions {
             // Just approach the bed to mark it as discovered
             try {
                 await bot.activateBlock(bed);
-                await this.actionSpace.sleep(300);
+                await this.utils.sleep(300);
             } catch (err) {
                 // Bed interaction failed
             }
@@ -131,7 +131,7 @@ class BedActions {
         const timeUntilNight = 12542 - timeOfDay;
         const millisecondsToWait = Math.min((timeUntilNight / 20) * 50, 5000); // Convert ticks to ms, max 5s
 
-        await this.actionSpace.sleep(millisecondsToWait);
+        await this.utils.sleep(millisecondsToWait);
 
         // Find safe spot to wait
         const { GoalBlock } = require('mineflayer-pathfinder').goals;
@@ -149,7 +149,7 @@ class BedActions {
         if (shelter) {
             const { GoalNear } = require('mineflayer-pathfinder').goals;
             bot.pathfinder.setGoal(new GoalNear(shelter.position.x, shelter.position.y, shelter.position.z, 2), true);
-            await this.actionSpace.sleep(1000);
+            await this.utils.sleep(1000);
         }
     }
 }

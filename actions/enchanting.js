@@ -6,8 +6,8 @@
 const Vec3 = require('vec3');
 
 class EnchantingActions {
-    constructor(actionSpace) {
-        this.actionSpace = actionSpace;
+    constructor(utils) {
+        this.utils = utils;
     }
 
     /**
@@ -25,11 +25,11 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(enchantingTable.position.x, enchantingTable.position.y, enchantingTable.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const enchantWindow = await bot.openEnchantmentTable(enchantingTable);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             enchantWindow.close();
         } catch (err) {
             // Failed to open enchanting table
@@ -61,19 +61,19 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(enchantingTable.position.x, enchantingTable.position.y, enchantingTable.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const enchantWindow = await bot.openEnchantmentTable(enchantingTable);
             await enchantWindow.putTargetItem(tool);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
 
             // Try to enchant at the highest available level
             const enchantments = enchantWindow.enchantments;
             if (enchantments && enchantments.length > 0) {
                 const bestEnchant = enchantments[enchantments.length - 1];
                 await enchantWindow.enchant(bestEnchant.level);
-                await this.actionSpace.sleep(500);
+                await this.utils.sleep(500);
             }
 
             enchantWindow.close();
@@ -106,18 +106,18 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(enchantingTable.position.x, enchantingTable.position.y, enchantingTable.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const enchantWindow = await bot.openEnchantmentTable(enchantingTable);
             await enchantWindow.putTargetItem(weapon);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
 
             const enchantments = enchantWindow.enchantments;
             if (enchantments && enchantments.length > 0) {
                 const bestEnchant = enchantments[enchantments.length - 1];
                 await enchantWindow.enchant(bestEnchant.level);
-                await this.actionSpace.sleep(500);
+                await this.utils.sleep(500);
             }
 
             enchantWindow.close();
@@ -152,18 +152,18 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(enchantingTable.position.x, enchantingTable.position.y, enchantingTable.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const enchantWindow = await bot.openEnchantmentTable(enchantingTable);
             await enchantWindow.putTargetItem(armor);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
 
             const enchantments = enchantWindow.enchantments;
             if (enchantments && enchantments.length > 0) {
                 const bestEnchant = enchantments[enchantments.length - 1];
                 await enchantWindow.enchant(bestEnchant.level);
-                await this.actionSpace.sleep(500);
+                await this.utils.sleep(500);
             }
 
             enchantWindow.close();
@@ -195,11 +195,11 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(anvil.position.x, anvil.position.y, anvil.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const anvilWindow = await bot.openAnvil(anvil);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             anvilWindow.close();
         } catch (err) {
             // Anvil operation failed
@@ -227,11 +227,11 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(anvil.position.x, anvil.position.y, anvil.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const anvilWindow = await bot.openAnvil(anvil);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             anvilWindow.close();
         } catch (err) {
             // Anvil operation failed
@@ -259,11 +259,11 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(grindstone.position.x, grindstone.position.y, grindstone.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const grindstoneWindow = await bot.openGrindstone(grindstone);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             grindstoneWindow.close();
         } catch (err) {
             // Grindstone operation failed
@@ -296,11 +296,11 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(brewingStand.position.x, brewingStand.position.y, brewingStand.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         try {
             const brewWindow = await bot.openBrewingStand(brewingStand);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
             brewWindow.close();
         } catch (err) {
             // Brewing failed
@@ -322,7 +322,7 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(lapisOre.position.x, lapisOre.position.y, lapisOre.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         const pickaxe = bot.inventory.items().find(item =>
             item.name.includes('pickaxe') && (item.name.includes('iron') || item.name.includes('diamond'))
@@ -330,12 +330,12 @@ class EnchantingActions {
 
         if (pickaxe) {
             await bot.equip(pickaxe, 'hand');
-            await this.actionSpace.sleep(100);
+            await this.utils.sleep(100);
         }
 
         try {
             await bot.dig(lapisOre);
-            await this.actionSpace.sleep(500);
+            await this.utils.sleep(500);
         } catch (err) {
             // Mining failed
         }
@@ -362,7 +362,7 @@ class EnchantingActions {
 
         const { GoalNear } = require('mineflayer-pathfinder').goals;
         bot.pathfinder.setGoal(new GoalNear(enchantingTable.position.x, enchantingTable.position.y, enchantingTable.position.z, 3), true);
-        await this.actionSpace.sleep(1000);
+        await this.utils.sleep(1000);
 
         // Place bookshelves around enchanting table (2 blocks away, 1 block higher)
         const positions = [
@@ -380,7 +380,7 @@ class EnchantingActions {
                 try {
                     await bot.equip(bookshelf, 'hand');
                     await bot.placeBlock(blockBelow, new Vec3(0, 1, 0));
-                    await this.actionSpace.sleep(300);
+                    await this.utils.sleep(300);
                 } catch (err) {
                     // Placement failed
                 }
