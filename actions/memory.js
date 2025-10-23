@@ -19,11 +19,11 @@ class MemoryActions {
     /**
      * Remember resource location
      */
-    rememberResource(bot, resourceType, position, yield) {
+    rememberResource(bot, resourceType, position, resourceYield) {
         this.memories.resources.push({
             type: resourceType,
             position: position.clone(),
-            yield,
+            yield: resourceYield,
             timestamp: Date.now(),
             visits: 0
         });

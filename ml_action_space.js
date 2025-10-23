@@ -20,7 +20,29 @@ const {
     CombatAdvancedActions,
     NavigationActions,
     OptimizationActions,
-    CommunicationActions
+    CommunicationActions,
+    // Advanced modules (Batch 1)
+    DimensionActions,
+    HotbarActions,
+    CombatTimingActions,
+    VillagerTradingActions,
+    ToolManagementActions,
+    StorageActions,
+    VehicleActions,
+    SpawnManagementActions,
+    FishingActions,
+    FlightActions,
+    // Essential modules (Batch 2)
+    HealthActions,
+    SocialActions,
+    PotionActions,
+    ExplorationActions,
+    NeedsActions,
+    ExperienceActions,
+    MemoryActions,
+    AchievementActions,
+    TeamActions,
+    WeatherActions
 } = require('./actions');
 
 // Import action utilities to prevent circular references
@@ -44,6 +66,30 @@ class ActionSpace {
         this.navigationActions = new NavigationActions(this.utils);
         this.optimizationActions = new OptimizationActions(this.utils);
         this.communicationActions = new CommunicationActions(this.utils);
+
+        // Advanced modules (Batch 1)
+        this.dimensionActions = new DimensionActions(this.utils);
+        this.hotbarActions = new HotbarActions(this.utils);
+        this.combatTimingActions = new CombatTimingActions(this.utils);
+        this.villagerTradingActions = new VillagerTradingActions(this.utils);
+        this.toolManagementActions = new ToolManagementActions(this.utils);
+        this.storageActions = new StorageActions(this.utils);
+        this.vehicleActions = new VehicleActions(this.utils);
+        this.spawnManagementActions = new SpawnManagementActions(this.utils);
+        this.fishingActions = new FishingActions(this.utils);
+        this.flightActions = new FlightActions(this.utils);
+
+        // Essential modules (Batch 2)
+        this.healthActions = new HealthActions(this.utils);
+        this.socialActions = new SocialActions(this.utils);
+        this.potionActions = new PotionActions(this.utils);
+        this.explorationActions = new ExplorationActions(this.utils);
+        this.needsActions = new NeedsActions(this.utils);
+        this.experienceActions = new ExperienceActions(this.utils);
+        this.memoryActions = new MemoryActions(this.utils);
+        this.achievementActions = new AchievementActions(this.utils);
+        this.teamActions = new TeamActions(this.utils);
+        this.weatherActions = new WeatherActions(this.utils);
 
         // Bind modular action methods (76-215)
         // Inventory Management (76-90)
@@ -209,6 +255,218 @@ class ActionSpace {
         this.formLine = this.communicationActions.formLine.bind(this.communicationActions);
         this.formCircle = this.communicationActions.formCircle.bind(this.communicationActions);
         this.followLeader = this.communicationActions.followLeader.bind(this.communicationActions);
+
+        // Dimension Actions (216-225)
+        this.enterNetherPortal = this.dimensionActions.enterNetherPortal.bind(this.dimensionActions);
+        this.buildNetherPortal = this.dimensionActions.buildNetherPortal.bind(this.dimensionActions);
+        this.findEndPortal = this.dimensionActions.findEndPortal.bind(this.dimensionActions);
+        this.goToWorldSpawn = this.dimensionActions.goToWorldSpawn.bind(this.dimensionActions);
+        this.getCurrentDimension = this.dimensionActions.getCurrentDimension.bind(this.dimensionActions);
+        this.isReadyForNether = this.dimensionActions.isReadyForNether.bind(this.dimensionActions);
+        this.isReadyForEnd = this.dimensionActions.isReadyForEnd.bind(this.dimensionActions);
+        this.emergencyReturnToOverworld = this.dimensionActions.emergencyReturnToOverworld.bind(this.dimensionActions);
+        this.getDimensionStrategy = this.dimensionActions.getDimensionStrategy.bind(this.dimensionActions);
+
+        // Hotbar Actions (226-240)
+        this.selectHotbarSlot = this.hotbarActions.selectHotbarSlot.bind(this.hotbarActions);
+        this.quickSwapToWeapon = this.hotbarActions.quickSwapToWeapon.bind(this.hotbarActions);
+        this.quickSwapToPickaxe = this.hotbarActions.quickSwapToPickaxe.bind(this.hotbarActions);
+        this.quickSwapToAxe = this.hotbarActions.quickSwapToAxe.bind(this.hotbarActions);
+        this.quickSwapToFood = this.hotbarActions.quickSwapToFood.bind(this.hotbarActions);
+        this.quickSwapToBow = this.hotbarActions.quickSwapToBow.bind(this.hotbarActions);
+        this.quickSwapToShield = this.hotbarActions.quickSwapToShield.bind(this.hotbarActions);
+        this.quickSwapToBlocks = this.hotbarActions.quickSwapToBlocks.bind(this.hotbarActions);
+        this.quickSwapToTorch = this.hotbarActions.quickSwapToTorch.bind(this.hotbarActions);
+        this.organizeHotbarForCombat = this.hotbarActions.organizeHotbarForCombat.bind(this.hotbarActions);
+        this.organizeHotbarForMining = this.hotbarActions.organizeHotbarForMining.bind(this.hotbarActions);
+        this.cycleHotbarNext = this.hotbarActions.cycleHotbarNext.bind(this.hotbarActions);
+        this.cycleHotbarPrevious = this.hotbarActions.cycleHotbarPrevious.bind(this.hotbarActions);
+
+        // Combat Timing Actions (241-250)
+        this.attackWithCooldown = this.combatTimingActions.attackWithCooldown.bind(this.combatTimingActions);
+        this.criticalHitAttack = this.combatTimingActions.criticalHitAttack.bind(this.combatTimingActions);
+        this.activateShield = this.combatTimingActions.activateShield.bind(this.combatTimingActions);
+        this.deactivateShield = this.combatTimingActions.deactivateShield.bind(this.combatTimingActions);
+        this.blockAndCounter = this.combatTimingActions.blockAndCounter.bind(this.combatTimingActions);
+        this.strafeLeftAttack = this.combatTimingActions.strafeLeftAttack.bind(this.combatTimingActions);
+        this.strafeRightAttack = this.combatTimingActions.strafeRightAttack.bind(this.combatTimingActions);
+        this.comboAttack = this.combatTimingActions.comboAttack.bind(this.combatTimingActions);
+        this.kiteAttack = this.combatTimingActions.kiteAttack.bind(this.combatTimingActions);
+        this.circleStrafe = this.combatTimingActions.circleStrafe.bind(this.combatTimingActions);
+        this.backstabAttack = this.combatTimingActions.backstabAttack.bind(this.combatTimingActions);
+
+        // Villager Trading Actions (251-265)
+        this.goToVillager = this.villagerTradingActions.goToVillager.bind(this.villagerTradingActions);
+        this.openTrades = this.villagerTradingActions.openTrades.bind(this.villagerTradingActions);
+        this.tradeSellForEmeralds = this.villagerTradingActions.tradeSellForEmeralds.bind(this.villagerTradingActions);
+        this.tradeBuyWithEmeralds = this.villagerTradingActions.tradeBuyWithEmeralds.bind(this.villagerTradingActions);
+        this.cureZombieVillager = this.villagerTradingActions.cureZombieVillager.bind(this.villagerTradingActions);
+        this.findBestTrade = this.villagerTradingActions.findBestTrade.bind(this.villagerTradingActions);
+        this.buildTradingHall = this.villagerTradingActions.buildTradingHall.bind(this.villagerTradingActions);
+
+        // Tool Management Actions (266-280)
+        this.findBestPickaxe = this.toolManagementActions.findBestPickaxe.bind(this.toolManagementActions);
+        this.findBestAxe = this.toolManagementActions.findBestAxe.bind(this.toolManagementActions);
+        this.findBestSword = this.toolManagementActions.findBestSword.bind(this.toolManagementActions);
+        this.equipFortunePickaxe = this.toolManagementActions.equipFortunePickaxe.bind(this.toolManagementActions);
+        this.equipEfficiencyTool = this.toolManagementActions.equipEfficiencyTool.bind(this.toolManagementActions);
+        this.equipEnchantedWeapon = this.toolManagementActions.equipEnchantedWeapon.bind(this.toolManagementActions);
+        this.repairToolAtAnvil = this.toolManagementActions.repairToolAtAnvil.bind(this.toolManagementActions);
+        this.selectOptimalTool = this.toolManagementActions.selectOptimalTool.bind(this.toolManagementActions);
+        this.discardBrokenTools = this.toolManagementActions.discardBrokenTools.bind(this.toolManagementActions);
+
+        // Storage Actions (281-295)
+        this.depositAllItems = this.storageActions.depositAllItems.bind(this.storageActions);
+        this.depositItemType = this.storageActions.depositItemType.bind(this.storageActions);
+        this.withdrawItem = this.storageActions.withdrawItem.bind(this.storageActions);
+        this.organizeChest = this.storageActions.organizeChest.bind(this.storageActions);
+        this.findChestWithItem = this.storageActions.findChestWithItem.bind(this.storageActions);
+        this.smeltItems = this.storageActions.smeltItems.bind(this.storageActions);
+        this.collectFurnaceOutput = this.storageActions.collectFurnaceOutput.bind(this.storageActions);
+
+        // Vehicle Actions (296-305)
+        this.mountHorse = this.vehicleActions.mountHorse.bind(this.vehicleActions);
+        this.dismount = this.vehicleActions.dismount.bind(this.vehicleActions);
+        this.tameHorse = this.vehicleActions.tameHorse.bind(this.vehicleActions);
+        this.placeAndEnterBoat = this.vehicleActions.placeAndEnterBoat.bind(this.vehicleActions);
+        this.exitAndPickupBoat = this.vehicleActions.exitAndPickupBoat.bind(this.vehicleActions);
+        this.placeMinecart = this.vehicleActions.placeMinecart.bind(this.vehicleActions);
+        this.enterMinecart = this.vehicleActions.enterMinecart.bind(this.vehicleActions);
+        this.feedHorse = this.vehicleActions.feedHorse.bind(this.vehicleActions);
+
+        // Spawn Management Actions (306-315)
+        this.placeBedAndSetSpawn = this.spawnManagementActions.placeBedAndSetSpawn.bind(this.spawnManagementActions);
+        this.sleepInBed = this.spawnManagementActions.sleepInBed.bind(this.spawnManagementActions);
+        this.goToSpawnPoint = this.spawnManagementActions.goToSpawnPoint.bind(this.spawnManagementActions);
+        this.recoverDeathItems = this.spawnManagementActions.recoverDeathItems.bind(this.spawnManagementActions);
+        this.markHomeLocation = this.spawnManagementActions.markHomeLocation.bind(this.spawnManagementActions);
+        this.goToHome = this.spawnManagementActions.goToHome.bind(this.spawnManagementActions);
+        this.buildEmergencyShelter = this.spawnManagementActions.buildEmergencyShelter.bind(this.spawnManagementActions);
+
+        // Fishing Actions (316-320)
+        this.castFishingRod = this.fishingActions.castFishingRod.bind(this.fishingActions);
+        this.reelIn = this.fishingActions.reelIn.bind(this.fishingActions);
+        this.autoFish = this.fishingActions.autoFish.bind(this.fishingActions);
+        this.fishForTreasure = this.fishingActions.fishForTreasure.bind(this.fishingActions);
+
+        // Flight Actions (321-330)
+        this.equipElytra = this.flightActions.equipElytra.bind(this.flightActions);
+        this.startGliding = this.flightActions.startGliding.bind(this.flightActions);
+        this.fireworkBoost = this.flightActions.fireworkBoost.bind(this.flightActions);
+        this.glideTowards = this.flightActions.glideTowards.bind(this.flightActions);
+        this.emergencyLand = this.flightActions.emergencyLand.bind(this.flightActions);
+        this.mlgWaterBucket = this.flightActions.mlgWaterBucket.bind(this.flightActions);
+
+        // Health Actions (331-345)
+        this.eatBestFood = this.healthActions.eatBestFood.bind(this.healthActions);
+        this.eatIfHungry = this.healthActions.eatIfHungry.bind(this.healthActions);
+        this.healIfLow = this.healthActions.healIfLow.bind(this.healthActions);
+        this.useRegenerationPotion = this.healthActions.useRegenerationPotion.bind(this.healthActions);
+        this.curePoison = this.healthActions.curePoison.bind(this.healthActions);
+        this.cureWither = this.healthActions.cureWither.bind(this.healthActions);
+        this.extinguishFire = this.healthActions.extinguishFire.bind(this.healthActions);
+        this.avoidFireDamage = this.healthActions.avoidFireDamage.bind(this.healthActions);
+        this.avoidDrowning = this.healthActions.avoidDrowning.bind(this.healthActions);
+        this.useGoldenApple = this.healthActions.useGoldenApple.bind(this.healthActions);
+        this.emergencyHeal = this.healthActions.emergencyHeal.bind(this.healthActions);
+        this.maintainHealth = this.healthActions.maintainHealth.bind(this.healthActions);
+
+        // Social Actions (346-360)
+        this.approachAgent = this.socialActions.approachAgent.bind(this.socialActions);
+        this.greetAgent = this.socialActions.greetAgent.bind(this.socialActions);
+        this.giftItem = this.socialActions.giftItem.bind(this.socialActions);
+        this.shareResources = this.socialActions.shareResources.bind(this.socialActions);
+        this.requestHelp = this.socialActions.requestHelp.bind(this.socialActions);
+        this.respondToHelp = this.socialActions.respondToHelp.bind(this.socialActions);
+        this.formParty = this.socialActions.formParty.bind(this.socialActions);
+        this.coordinateGroupAttack = this.socialActions.coordinateGroupAttack.bind(this.socialActions);
+        this.followLeader = this.socialActions.followLeader.bind(this.socialActions);
+        this.shareLocation = this.socialActions.shareLocation.bind(this.socialActions);
+        this.celebrate = this.socialActions.celebrate.bind(this.socialActions);
+        this.tradeWithAgent = this.socialActions.tradeWithAgent.bind(this.socialActions);
+
+        // Potion Actions (361-375)
+        this.brewStrengthPotion = this.potionActions.brewStrengthPotion.bind(this.potionActions);
+        this.brewSpeedPotion = this.potionActions.brewSpeedPotion.bind(this.potionActions);
+        this.brewHealingPotion = this.potionActions.brewHealingPotion.bind(this.potionActions);
+        this.brewFireResistancePotion = this.potionActions.brewFireResistancePotion.bind(this.potionActions);
+        this.useStrengthForCombat = this.potionActions.useStrengthForCombat.bind(this.potionActions);
+        this.useSpeedForTravel = this.potionActions.useSpeedForTravel.bind(this.potionActions);
+        this.useFireResistanceForNether = this.potionActions.useFireResistanceForNether.bind(this.potionActions);
+        this.throwSplashPotion = this.potionActions.throwSplashPotion.bind(this.potionActions);
+        this.healAllyWithPotion = this.potionActions.healAllyWithPotion.bind(this.potionActions);
+        this.attackWithPotion = this.potionActions.attackWithPotion.bind(this.potionActions);
+        this.maintainCombatBuffs = this.potionActions.maintainCombatBuffs.bind(this.potionActions);
+        this.useWaterBreathing = this.potionActions.useWaterBreathing.bind(this.potionActions);
+
+        // Exploration Actions (376-390)
+        this.exploreNearestChunk = this.explorationActions.exploreNearestChunk.bind(this.explorationActions);
+        this.markPOI = this.explorationActions.markPOI.bind(this.explorationActions);
+        this.findCaveEntrance = this.explorationActions.findCaveEntrance.bind(this.explorationActions);
+        this.exploreCave = this.explorationActions.exploreCave.bind(this.explorationActions);
+        this.huntBiome = this.explorationActions.huntBiome.bind(this.explorationActions);
+        this.spiralSearch = this.explorationActions.spiralSearch.bind(this.explorationActions);
+        this.returnToPOI = this.explorationActions.returnToPOI.bind(this.explorationActions);
+        this.mapArea = this.explorationActions.mapArea.bind(this.explorationActions);
+
+        // Needs Actions (391-405)
+        this.assessNeeds = this.needsActions.assessNeeds.bind(this.needsActions);
+        this.getMostUrgentNeed = this.needsActions.getMostUrgentNeed.bind(this.needsActions);
+        this.satisfyHunger = this.needsActions.satisfyHunger.bind(this.needsActions);
+        this.satisfyEnergy = this.needsActions.satisfyEnergy.bind(this.needsActions);
+        this.satisfySocial = this.needsActions.satisfySocial.bind(this.needsActions);
+        this.satisfySafety = this.needsActions.satisfySafety.bind(this.needsActions);
+        this.satisfyFun = this.needsActions.satisfyFun.bind(this.needsActions);
+        this.satisfyComfort = this.needsActions.satisfyComfort.bind(this.needsActions);
+        this.satisfyEnvironment = this.needsActions.satisfyEnvironment.bind(this.needsActions);
+        this.addressUrgentNeed = this.needsActions.addressUrgentNeed.bind(this.needsActions);
+
+        // Experience Actions (406-420)
+        this.farmMobSpawner = this.experienceActions.farmMobSpawner.bind(this.experienceActions);
+        this.huntMobsForXP = this.experienceActions.huntMobsForXP.bind(this.experienceActions);
+        this.collectXPOrbs = this.experienceActions.collectXPOrbs.bind(this.experienceActions);
+        this.buildXPFarm = this.experienceActions.buildXPFarm.bind(this.experienceActions);
+        this.farmXPToLevel = this.experienceActions.farmXPToLevel.bind(this.experienceActions);
+        this.fishForXP = this.experienceActions.fishForXP.bind(this.experienceActions);
+        this.smeltForXP = this.experienceActions.smeltForXP.bind(this.experienceActions);
+        this.breedForXP = this.experienceActions.breedForXP.bind(this.experienceActions);
+
+        // Memory Actions (421-435)
+        this.rememberResource = this.memoryActions.rememberResource.bind(this.memoryActions);
+        this.recallBestResourceLocation = this.memoryActions.recallBestResourceLocation.bind(this.memoryActions);
+        this.returnToMiningSpot = this.memoryActions.returnToMiningSpot.bind(this.memoryActions);
+        this.rememberDanger = this.memoryActions.rememberDanger.bind(this.memoryActions);
+        this.avoidDanger = this.memoryActions.avoidDanger.bind(this.memoryActions);
+        this.rememberSuccess = this.memoryActions.rememberSuccess.bind(this.memoryActions);
+        this.rememberFailure = this.memoryActions.rememberFailure.bind(this.memoryActions);
+        this.recallSimilarExperience = this.memoryActions.recallSimilarExperience.bind(this.memoryActions);
+
+        // Achievement Actions (436-450)
+        this.targetDiamonds = this.achievementActions.targetDiamonds.bind(this.achievementActions);
+        this.targetIronArmor = this.achievementActions.targetIronArmor.bind(this.achievementActions);
+        this.targetEnchantingTable = this.achievementActions.targetEnchantingTable.bind(this.achievementActions);
+        this.targetNetherPortal = this.achievementActions.targetNetherPortal.bind(this.achievementActions);
+        this.targetBreedAnimals = this.achievementActions.targetBreedAnimals.bind(this.achievementActions);
+        this.getAchievementProgress = this.achievementActions.getAchievementProgress.bind(this.achievementActions);
+        this.getNextAchievement = this.achievementActions.getNextAchievement.bind(this.achievementActions);
+
+        // Team Actions (451-465)
+        this.createTeam = this.teamActions.createTeam.bind(this.teamActions);
+        this.joinTeam = this.teamActions.joinTeam.bind(this.teamActions);
+        this.leaveTeam = this.teamActions.leaveTeam.bind(this.teamActions);
+        this.setTeamObjective = this.teamActions.setTeamObjective.bind(this.teamActions);
+        this.coordinateAttack = this.teamActions.coordinateAttack.bind(this.teamActions);
+        this.assignRoles = this.teamActions.assignRoles.bind(this.teamActions);
+        this.shareWithTeam = this.teamActions.shareWithTeam.bind(this.teamActions);
+        this.requestBackup = this.teamActions.requestBackup.bind(this.teamActions);
+        this.formBattleFormation = this.teamActions.formBattleFormation.bind(this.teamActions);
+
+        // Weather Actions (466-475)
+        this.seekShelterFromRain = this.weatherActions.seekShelterFromRain.bind(this.weatherActions);
+        this.chargeCreeper = this.weatherActions.chargeCreeper.bind(this.weatherActions);
+        this.fishInRain = this.weatherActions.fishInRain.bind(this.weatherActions);
+        this.waitForClearWeather = this.weatherActions.waitForClearWeather.bind(this.weatherActions);
+        this.collectWaterInRain = this.weatherActions.collectWaterInRain.bind(this.weatherActions);
 
         // Define all possible actions
         this.actions = [
@@ -469,6 +727,218 @@ class ActionSpace {
             { id: 213, name: 'form_line', type: 'communication', execute: this.formLine },
             { id: 214, name: 'form_circle', type: 'communication', execute: this.formCircle },
             { id: 215, name: 'follow_leader', type: 'communication', execute: this.followLeader },
+
+            // === DIMENSION ACTIONS (216-224) ===
+            { id: 216, name: 'enter_nether_portal', type: 'dimension', execute: this.enterNetherPortal },
+            { id: 217, name: 'build_nether_portal', type: 'dimension', execute: this.buildNetherPortal },
+            { id: 218, name: 'find_end_portal', type: 'dimension', execute: this.findEndPortal },
+            { id: 219, name: 'go_to_world_spawn', type: 'dimension', execute: this.goToWorldSpawn },
+            { id: 220, name: 'get_current_dimension', type: 'dimension', execute: this.getCurrentDimension },
+            { id: 221, name: 'is_ready_for_nether', type: 'dimension', execute: this.isReadyForNether },
+            { id: 222, name: 'is_ready_for_end', type: 'dimension', execute: this.isReadyForEnd },
+            { id: 223, name: 'emergency_return_to_overworld', type: 'dimension', execute: this.emergencyReturnToOverworld },
+            { id: 224, name: 'get_dimension_strategy', type: 'dimension', execute: this.getDimensionStrategy },
+
+            // === HOTBAR ACTIONS (225-237) ===
+            { id: 225, name: 'select_hotbar_slot', type: 'hotbar', execute: this.selectHotbarSlot },
+            { id: 226, name: 'quick_swap_to_weapon', type: 'hotbar', execute: this.quickSwapToWeapon },
+            { id: 227, name: 'quick_swap_to_pickaxe', type: 'hotbar', execute: this.quickSwapToPickaxe },
+            { id: 228, name: 'quick_swap_to_axe', type: 'hotbar', execute: this.quickSwapToAxe },
+            { id: 229, name: 'quick_swap_to_food', type: 'hotbar', execute: this.quickSwapToFood },
+            { id: 230, name: 'quick_swap_to_bow', type: 'hotbar', execute: this.quickSwapToBow },
+            { id: 231, name: 'quick_swap_to_shield', type: 'hotbar', execute: this.quickSwapToShield },
+            { id: 232, name: 'quick_swap_to_blocks', type: 'hotbar', execute: this.quickSwapToBlocks },
+            { id: 233, name: 'quick_swap_to_torch', type: 'hotbar', execute: this.quickSwapToTorch },
+            { id: 234, name: 'organize_hotbar_for_combat', type: 'hotbar', execute: this.organizeHotbarForCombat },
+            { id: 235, name: 'organize_hotbar_for_mining', type: 'hotbar', execute: this.organizeHotbarForMining },
+            { id: 236, name: 'cycle_hotbar_next', type: 'hotbar', execute: this.cycleHotbarNext },
+            { id: 237, name: 'cycle_hotbar_previous', type: 'hotbar', execute: this.cycleHotbarPrevious },
+
+            // === COMBAT TIMING ACTIONS (238-248) ===
+            { id: 238, name: 'attack_with_cooldown', type: 'combat_timing', execute: this.attackWithCooldown },
+            { id: 239, name: 'critical_hit_attack', type: 'combat_timing', execute: this.criticalHitAttack },
+            { id: 240, name: 'activate_shield', type: 'combat_timing', execute: this.activateShield },
+            { id: 241, name: 'deactivate_shield', type: 'combat_timing', execute: this.deactivateShield },
+            { id: 242, name: 'block_and_counter', type: 'combat_timing', execute: this.blockAndCounter },
+            { id: 243, name: 'strafe_left_attack', type: 'combat_timing', execute: this.strafeLeftAttack },
+            { id: 244, name: 'strafe_right_attack', type: 'combat_timing', execute: this.strafeRightAttack },
+            { id: 245, name: 'combo_attack', type: 'combat_timing', execute: this.comboAttack },
+            { id: 246, name: 'kite_attack', type: 'combat_timing', execute: this.kiteAttack },
+            { id: 247, name: 'circle_strafe', type: 'combat_timing', execute: this.circleStrafe },
+            { id: 248, name: 'backstab_attack', type: 'combat_timing', execute: this.backstabAttack },
+
+            // === VILLAGER TRADING ACTIONS (249-255) ===
+            { id: 249, name: 'go_to_villager', type: 'villager_trading', execute: this.goToVillager },
+            { id: 250, name: 'open_trades', type: 'villager_trading', execute: this.openTrades },
+            { id: 251, name: 'trade_sell_for_emeralds', type: 'villager_trading', execute: this.tradeSellForEmeralds },
+            { id: 252, name: 'trade_buy_with_emeralds', type: 'villager_trading', execute: this.tradeBuyWithEmeralds },
+            { id: 253, name: 'cure_zombie_villager', type: 'villager_trading', execute: this.cureZombieVillager },
+            { id: 254, name: 'find_best_trade', type: 'villager_trading', execute: this.findBestTrade },
+            { id: 255, name: 'build_trading_hall', type: 'villager_trading', execute: this.buildTradingHall },
+
+            // === TOOL MANAGEMENT ACTIONS (256-264) ===
+            { id: 256, name: 'find_best_pickaxe', type: 'tool_management', execute: this.findBestPickaxe },
+            { id: 257, name: 'find_best_axe', type: 'tool_management', execute: this.findBestAxe },
+            { id: 258, name: 'find_best_sword', type: 'tool_management', execute: this.findBestSword },
+            { id: 259, name: 'equip_fortune_pickaxe', type: 'tool_management', execute: this.equipFortunePickaxe },
+            { id: 260, name: 'equip_efficiency_tool', type: 'tool_management', execute: this.equipEfficiencyTool },
+            { id: 261, name: 'equip_enchanted_weapon', type: 'tool_management', execute: this.equipEnchantedWeapon },
+            { id: 262, name: 'repair_tool_at_anvil', type: 'tool_management', execute: this.repairToolAtAnvil },
+            { id: 263, name: 'select_optimal_tool', type: 'tool_management', execute: this.selectOptimalTool },
+            { id: 264, name: 'discard_broken_tools', type: 'tool_management', execute: this.discardBrokenTools },
+
+            // === STORAGE ACTIONS (265-271) ===
+            { id: 265, name: 'deposit_all_items', type: 'storage', execute: this.depositAllItems },
+            { id: 266, name: 'deposit_item_type', type: 'storage', execute: this.depositItemType },
+            { id: 267, name: 'withdraw_item', type: 'storage', execute: this.withdrawItem },
+            { id: 268, name: 'organize_chest', type: 'storage', execute: this.organizeChest },
+            { id: 269, name: 'find_chest_with_item', type: 'storage', execute: this.findChestWithItem },
+            { id: 270, name: 'smelt_items', type: 'storage', execute: this.smeltItems },
+            { id: 271, name: 'collect_furnace_output', type: 'storage', execute: this.collectFurnaceOutput },
+
+            // === VEHICLE ACTIONS (272-279) ===
+            { id: 272, name: 'mount_horse', type: 'vehicle', execute: this.mountHorse },
+            { id: 273, name: 'dismount', type: 'vehicle', execute: this.dismount },
+            { id: 274, name: 'tame_horse', type: 'vehicle', execute: this.tameHorse },
+            { id: 275, name: 'place_and_enter_boat', type: 'vehicle', execute: this.placeAndEnterBoat },
+            { id: 276, name: 'exit_and_pickup_boat', type: 'vehicle', execute: this.exitAndPickupBoat },
+            { id: 277, name: 'place_minecart', type: 'vehicle', execute: this.placeMinecart },
+            { id: 278, name: 'enter_minecart', type: 'vehicle', execute: this.enterMinecart },
+            { id: 279, name: 'feed_horse', type: 'vehicle', execute: this.feedHorse },
+
+            // === SPAWN MANAGEMENT ACTIONS (280-286) ===
+            { id: 280, name: 'place_bed_and_set_spawn', type: 'spawn_management', execute: this.placeBedAndSetSpawn },
+            { id: 281, name: 'sleep_in_bed', type: 'spawn_management', execute: this.sleepInBed },
+            { id: 282, name: 'go_to_spawn_point', type: 'spawn_management', execute: this.goToSpawnPoint },
+            { id: 283, name: 'recover_death_items', type: 'spawn_management', execute: this.recoverDeathItems },
+            { id: 284, name: 'mark_home_location', type: 'spawn_management', execute: this.markHomeLocation },
+            { id: 285, name: 'go_to_home', type: 'spawn_management', execute: this.goToHome },
+            { id: 286, name: 'build_emergency_shelter', type: 'spawn_management', execute: this.buildEmergencyShelter },
+
+            // === FISHING ACTIONS (287-290) ===
+            { id: 287, name: 'cast_fishing_rod', type: 'fishing', execute: this.castFishingRod },
+            { id: 288, name: 'reel_in', type: 'fishing', execute: this.reelIn },
+            { id: 289, name: 'auto_fish', type: 'fishing', execute: this.autoFish },
+            { id: 290, name: 'fish_for_treasure', type: 'fishing', execute: this.fishForTreasure },
+
+            // === FLIGHT ACTIONS (291-296) ===
+            { id: 291, name: 'equip_elytra', type: 'flight', execute: this.equipElytra },
+            { id: 292, name: 'start_gliding', type: 'flight', execute: this.startGliding },
+            { id: 293, name: 'firework_boost', type: 'flight', execute: this.fireworkBoost },
+            { id: 294, name: 'glide_towards', type: 'flight', execute: this.glideTowards },
+            { id: 295, name: 'emergency_land', type: 'flight', execute: this.emergencyLand },
+            { id: 296, name: 'mlg_water_bucket', type: 'flight', execute: this.mlgWaterBucket },
+
+            // === HEALTH ACTIONS (297-308) ===
+            { id: 297, name: 'eat_best_food', type: 'health', execute: this.eatBestFood },
+            { id: 298, name: 'eat_if_hungry', type: 'health', execute: this.eatIfHungry },
+            { id: 299, name: 'heal_if_low', type: 'health', execute: this.healIfLow },
+            { id: 300, name: 'use_regeneration_potion', type: 'health', execute: this.useRegenerationPotion },
+            { id: 301, name: 'cure_poison', type: 'health', execute: this.curePoison },
+            { id: 302, name: 'cure_wither', type: 'health', execute: this.cureWither },
+            { id: 303, name: 'extinguish_fire', type: 'health', execute: this.extinguishFire },
+            { id: 304, name: 'avoid_fire_damage', type: 'health', execute: this.avoidFireDamage },
+            { id: 305, name: 'avoid_drowning', type: 'health', execute: this.avoidDrowning },
+            { id: 306, name: 'use_golden_apple', type: 'health', execute: this.useGoldenApple },
+            { id: 307, name: 'emergency_heal', type: 'health', execute: this.emergencyHeal },
+            { id: 308, name: 'maintain_health', type: 'health', execute: this.maintainHealth },
+
+            // === SOCIAL ACTIONS (309-320) ===
+            { id: 309, name: 'approach_agent', type: 'social', execute: this.approachAgent },
+            { id: 310, name: 'greet_agent', type: 'social', execute: this.greetAgent },
+            { id: 311, name: 'gift_item', type: 'social', execute: this.giftItem },
+            { id: 312, name: 'share_resources', type: 'social', execute: this.shareResources },
+            { id: 313, name: 'request_help', type: 'social', execute: this.requestHelp },
+            { id: 314, name: 'respond_to_help', type: 'social', execute: this.respondToHelp },
+            { id: 315, name: 'form_party', type: 'social', execute: this.formParty },
+            { id: 316, name: 'coordinate_group_attack', type: 'social', execute: this.coordinateGroupAttack },
+            { id: 317, name: 'follow_leader', type: 'social', execute: this.followLeader },
+            { id: 318, name: 'share_location', type: 'social', execute: this.shareLocation },
+            { id: 319, name: 'celebrate', type: 'social', execute: this.celebrate },
+            { id: 320, name: 'trade_with_agent', type: 'social', execute: this.tradeWithAgent },
+
+            // === POTION ACTIONS (321-332) ===
+            { id: 321, name: 'brew_strength_potion', type: 'potion', execute: this.brewStrengthPotion },
+            { id: 322, name: 'brew_speed_potion', type: 'potion', execute: this.brewSpeedPotion },
+            { id: 323, name: 'brew_healing_potion', type: 'potion', execute: this.brewHealingPotion },
+            { id: 324, name: 'brew_fire_resistance_potion', type: 'potion', execute: this.brewFireResistancePotion },
+            { id: 325, name: 'use_strength_for_combat', type: 'potion', execute: this.useStrengthForCombat },
+            { id: 326, name: 'use_speed_for_travel', type: 'potion', execute: this.useSpeedForTravel },
+            { id: 327, name: 'use_fire_resistance_for_nether', type: 'potion', execute: this.useFireResistanceForNether },
+            { id: 328, name: 'throw_splash_potion', type: 'potion', execute: this.throwSplashPotion },
+            { id: 329, name: 'heal_ally_with_potion', type: 'potion', execute: this.healAllyWithPotion },
+            { id: 330, name: 'attack_with_potion', type: 'potion', execute: this.attackWithPotion },
+            { id: 331, name: 'maintain_combat_buffs', type: 'potion', execute: this.maintainCombatBuffs },
+            { id: 332, name: 'use_water_breathing', type: 'potion', execute: this.useWaterBreathing },
+
+            // === EXPLORATION ACTIONS (333-340) ===
+            { id: 333, name: 'explore_nearest_chunk', type: 'exploration', execute: this.exploreNearestChunk },
+            { id: 334, name: 'mark_poi', type: 'exploration', execute: this.markPOI },
+            { id: 335, name: 'find_cave_entrance', type: 'exploration', execute: this.findCaveEntrance },
+            { id: 336, name: 'explore_cave', type: 'exploration', execute: this.exploreCave },
+            { id: 337, name: 'hunt_biome', type: 'exploration', execute: this.huntBiome },
+            { id: 338, name: 'spiral_search', type: 'exploration', execute: this.spiralSearch },
+            { id: 339, name: 'return_to_poi', type: 'exploration', execute: this.returnToPOI },
+            { id: 340, name: 'map_area', type: 'exploration', execute: this.mapArea },
+
+            // === NEEDS ACTIONS (341-350) ===
+            { id: 341, name: 'assess_needs', type: 'needs', execute: this.assessNeeds },
+            { id: 342, name: 'get_most_urgent_need', type: 'needs', execute: this.getMostUrgentNeed },
+            { id: 343, name: 'satisfy_hunger', type: 'needs', execute: this.satisfyHunger },
+            { id: 344, name: 'satisfy_energy', type: 'needs', execute: this.satisfyEnergy },
+            { id: 345, name: 'satisfy_social', type: 'needs', execute: this.satisfySocial },
+            { id: 346, name: 'satisfy_safety', type: 'needs', execute: this.satisfySafety },
+            { id: 347, name: 'satisfy_fun', type: 'needs', execute: this.satisfyFun },
+            { id: 348, name: 'satisfy_comfort', type: 'needs', execute: this.satisfyComfort },
+            { id: 349, name: 'satisfy_environment', type: 'needs', execute: this.satisfyEnvironment },
+            { id: 350, name: 'address_urgent_need', type: 'needs', execute: this.addressUrgentNeed },
+
+            // === EXPERIENCE ACTIONS (351-358) ===
+            { id: 351, name: 'farm_mob_spawner', type: 'experience', execute: this.farmMobSpawner },
+            { id: 352, name: 'hunt_mobs_for_xp', type: 'experience', execute: this.huntMobsForXP },
+            { id: 353, name: 'collect_xp_orbs', type: 'experience', execute: this.collectXPOrbs },
+            { id: 354, name: 'build_xp_farm', type: 'experience', execute: this.buildXPFarm },
+            { id: 355, name: 'farm_xp_to_level', type: 'experience', execute: this.farmXPToLevel },
+            { id: 356, name: 'fish_for_xp', type: 'experience', execute: this.fishForXP },
+            { id: 357, name: 'smelt_for_xp', type: 'experience', execute: this.smeltForXP },
+            { id: 358, name: 'breed_for_xp', type: 'experience', execute: this.breedForXP },
+
+            // === MEMORY ACTIONS (359-366) ===
+            { id: 359, name: 'remember_resource', type: 'memory', execute: this.rememberResource },
+            { id: 360, name: 'recall_best_resource_location', type: 'memory', execute: this.recallBestResourceLocation },
+            { id: 361, name: 'return_to_mining_spot', type: 'memory', execute: this.returnToMiningSpot },
+            { id: 362, name: 'remember_danger', type: 'memory', execute: this.rememberDanger },
+            { id: 363, name: 'avoid_danger', type: 'memory', execute: this.avoidDanger },
+            { id: 364, name: 'remember_success', type: 'memory', execute: this.rememberSuccess },
+            { id: 365, name: 'remember_failure', type: 'memory', execute: this.rememberFailure },
+            { id: 366, name: 'recall_similar_experience', type: 'memory', execute: this.recallSimilarExperience },
+
+            // === ACHIEVEMENT ACTIONS (367-373) ===
+            { id: 367, name: 'target_diamonds', type: 'achievement', execute: this.targetDiamonds },
+            { id: 368, name: 'target_iron_armor', type: 'achievement', execute: this.targetIronArmor },
+            { id: 369, name: 'target_enchanting_table', type: 'achievement', execute: this.targetEnchantingTable },
+            { id: 370, name: 'target_nether_portal', type: 'achievement', execute: this.targetNetherPortal },
+            { id: 371, name: 'target_breed_animals', type: 'achievement', execute: this.targetBreedAnimals },
+            { id: 372, name: 'get_achievement_progress', type: 'achievement', execute: this.getAchievementProgress },
+            { id: 373, name: 'get_next_achievement', type: 'achievement', execute: this.getNextAchievement },
+
+            // === TEAM ACTIONS (374-382) ===
+            { id: 374, name: 'create_team', type: 'team', execute: this.createTeam },
+            { id: 375, name: 'join_team', type: 'team', execute: this.joinTeam },
+            { id: 376, name: 'leave_team', type: 'team', execute: this.leaveTeam },
+            { id: 377, name: 'set_team_objective', type: 'team', execute: this.setTeamObjective },
+            { id: 378, name: 'coordinate_attack', type: 'team', execute: this.coordinateAttack },
+            { id: 379, name: 'assign_roles', type: 'team', execute: this.assignRoles },
+            { id: 380, name: 'share_with_team', type: 'team', execute: this.shareWithTeam },
+            { id: 381, name: 'request_backup', type: 'team', execute: this.requestBackup },
+            { id: 382, name: 'form_battle_formation', type: 'team', execute: this.formBattleFormation },
+
+            // === WEATHER ACTIONS (383-387) ===
+            { id: 383, name: 'seek_shelter_from_rain', type: 'weather', execute: this.seekShelterFromRain },
+            { id: 384, name: 'charge_creeper', type: 'weather', execute: this.chargeCreeper },
+            { id: 385, name: 'fish_in_rain', type: 'weather', execute: this.fishInRain },
+            { id: 386, name: 'wait_for_clear_weather', type: 'weather', execute: this.waitForClearWeather },
+            { id: 387, name: 'collect_water_in_rain', type: 'weather', execute: this.collectWaterInRain },
         ];
 
         this.ACTION_COUNT = this.actions.length;
