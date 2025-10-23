@@ -104,7 +104,8 @@
       "Bash(curl -X POST -u \"AIAgent:D#hp^uC5RuJcn%\" -H \"Content-Type: application/xml\" -d \"<build><buildType id=''AgentSensorPlugin''/></build>\" \"http://145.239.253.161:8111/app/rest/buildQueue\")",
       "Bash(curl -u \"AIAgent:D#hp^uC5RuJcn%\" \"http://145.239.253.161:8111/app/rest/builds/id:20/artifacts/children/\")",
       "Bash(timeout 120 java -Xmx4G -Xms2G -jar spigot-1.21.10.jar nogui)",
-      "Bash(tasklist:*)"
+      "Bash(tasklist:*)",
+      "Bash(for file in dimension.js hotbar.js combat_timing.js villager_trading.js tool_management.js storage.js vehicles.js spawn_management.js fishing.js flight.js)"
     ],
     "deny": [],
     "ask": []

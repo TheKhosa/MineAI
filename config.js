@@ -235,6 +235,7 @@ module.exports = {
         enableStuckDetection: true,  // Enable stuck detection and respawning
         enableKnowledgeSharing: true,  // Enable agents sharing experiences
         enableSocialRewards: true,  // Reward social interactions
+        enableAgentChat: true,  // Enable agent-to-agent communication with personality compatibility
         enableMoodSystem: true,  // Sims-like needs and moods
         enableLineageTracking: true,  // Track parent→offspring relationships
         enableGameMaster: false,  // Disable GameMaster (agents are autonomous)

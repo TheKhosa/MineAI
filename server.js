@@ -944,7 +944,7 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
                     };
                 });
 
-                // Generate personality for agent
+                // Generate personality for agent (ML-based)
                 if (mlPersonality) {
                     let parentPersonality = null;
 
@@ -976,6 +976,43 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
                             0.3
                         ).catch(err => console.error('[ML_PERSONALITY] Failed to save snapshot:', err.message));
                     }
+                }
+
+                // Generate Sims-like personality for social interactions
+                if (personalitySystem) {
+                    if (parentUUID && generation > 1) {
+                        // Try to inherit personality from parent
+                        const parentData = agentPopulation.get(parentName);
+                        if (parentData && parentData.simsPersonality) {
+                            bot.simsPersonality = personalitySystem.inheritPersonality(parentData.simsPersonality, 0.3);
+                            console.log(`[PERSONALITY] ${agentName} inherited Sims personality from ${parentName} (Gen ${generation})`);
+                        } else {
+                            bot.simsPersonality = personalitySystem.generatePersonality();
+                            console.log(`[PERSONALITY] ${agentName} generated new Sims personality (parent data not found)`);
+                        }
+                    } else {
+                        // Generate new personality for first generation
+                        bot.simsPersonality = personalitySystem.generatePersonality();
+                        console.log(`[PERSONALITY] ${agentName} generated new Gen ${generation} Sims personality`);
+                    }
+
+                    // Store personality snapshot in memory system
+                    if (memorySystem && agentUUID) {
+                        memorySystem.savePersonalitySnapshot(
+                            agentUUID,
+                            agentName,
+                            generation,
+                            bot.simsPersonality,
+                            parentUUID,
+                            0.3
+                        ).catch(err => console.error('[PERSONALITY] Failed to save Sims personality snapshot:', err.message));
+                    }
+
+                    // Log personality summary
+                    const summary = personalitySystem.getPersonalitySummary(bot.simsPersonality);
+                    console.log(`[PERSONALITY] ${agentName} traits: ${summary.traits}`);
+                    console.log(`[PERSONALITY] ${agentName} loves: ${summary.loves.slice(0, 3).join(', ')}`);
+                    console.log(`[PERSONALITY] ${agentName} hates: ${summary.hates.slice(0, 2).join(', ')}`);
                 }
 
                 // Load plugins
@@ -1108,6 +1145,151 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
 // AGENT EVENT HANDLERS
 // ============================================================================
 
+/**
+ * Try agent-to-agent communication with personality compatibility
+ */
+async function tryAgentCommunication(bot) {
+    if (!bot.entity || !bot.agentName) return;
+    if (!chatLLM || !personalitySystem) return;
+
+    // Find nearby player entities (other agents)
+    const nearbyPlayers = Object.values(bot.entities || {}).filter(entity => {
+        if (!entity || !entity.position || entity === bot.entity) return false;
+        if (entity.type !== 'player') return false;
+        const distance = entity.position.distanceTo(bot.entity.position);
+        return distance > 0 && distance < 20;
+    });
+
+    if (nearbyPlayers.length === 0) return;
+
+    const targetEntity = nearbyPlayers[Math.floor(Math.random() * nearbyPlayers.length)];
+    const targetName = targetEntity.username || 'Unknown';
+
+    // Get target agent data from activeAgents
+    const targetBot = activeAgents.get(targetName);
+
+    // Calculate compatibility if both agents have Sims personalities
+    let compatibility = 0;
+    if (bot.simsPersonality && targetBot && targetBot.simsPersonality) {
+        compatibility = personalitySystem.calculateCompatibility(bot.simsPersonality, targetBot.simsPersonality);
+        const compatibilityDesc = personalitySystem.getCompatibilityDescription(compatibility);
+        console.log(`[COMPATIBILITY] ${bot.agentName} ↔ ${targetName}: ${compatibility.toFixed(2)} (${compatibilityDesc})`);
+    }
+
+    // Get a conversation topic (like/dislike to discuss)
+    const preferenceToDiscuss = bot.simsPersonality && Math.random() < 0.4 ? // 40% chance to discuss preferences
+        personalitySystem.getConversationTopic(bot.simsPersonality) : null;
+
+    // Build context
+    const speaker = {
+        name: bot.agentName,
+        health: bot.health / 20,
+        food: bot.food / 20,
+        needs: bot.moods || {},
+        inventory: bot.inventory ? Object.keys(bot.inventory.items()).length + ' items' : 'empty',
+        mood: getMoodDescription(bot.moods),
+        personality: bot.simsPersonality,
+        preferenceToDiscuss: preferenceToDiscuss,
+        compatibility: compatibility
+    };
+
+    const listener = {
+        name: targetName,
+        needs: targetBot?.moods || {},
+        inventory: targetBot ? 'items' : 'unknown',
+        mood: targetBot ? getMoodDescription(targetBot.moods) : 'unknown'
+    };
+
+    let context = 'nearby';
+    if (bot.moods) {
+        if (bot.moods.health < 0.3) context = 'low_health';
+        else if (bot.moods.safety < 0.3) context = 'danger';
+        else if (bot.moods.resources < 0.3) context = 'trading';
+    }
+
+    const message = await chatLLM.generateDialogue(speaker, listener, context);
+
+    if (message && message.length > 0) {
+        bot.chat(message);
+        console.log(`[CHAT] ${bot.agentName} → ${targetName}: "${message}" (context: ${context}, compatibility: ${compatibility.toFixed(2)})`);
+
+        // Store preference discussion in memory if topic was discussed
+        if (memorySystem && preferenceToDiscuss && bot.uuid && targetBot?.uuid) {
+            // Try to infer other agent's sentiment from their personality
+            let otherSentiment = 'unknown';
+            if (targetBot.simsPersonality) {
+                const category = preferenceToDiscuss.category;
+                const item = preferenceToDiscuss.item;
+                if (targetBot.simsPersonality.likes[category]?.includes(item)) {
+                    otherSentiment = 'like';
+                } else if (targetBot.simsPersonality.dislikes[category]?.includes(item)) {
+                    otherSentiment = 'dislike';
+                }
+            }
+
+            memorySystem.storePreferenceDiscussion(
+                bot.uuid,
+                targetBot.uuid,
+                preferenceToDiscuss,
+                preferenceToDiscuss.sentiment,
+                otherSentiment,
+                compatibility,
+                message
+            ).catch(err => console.error('[MEMORY] Failed to store preference discussion:', err.message));
+        }
+
+        // Emit to dashboard with compatibility info
+        if (dashboard && dashboard.io) {
+            dashboard.io.emit('agent_chat', {
+                timestamp: Date.now(),
+                from: bot.agentName,
+                to: targetName,
+                message,
+                context,
+                distance: targetEntity.position.distanceTo(bot.entity.position).toFixed(1),
+                compatibility: compatibility.toFixed(2),
+                compatibilityDesc: personalitySystem.getCompatibilityDescription(compatibility),
+                topic: preferenceToDiscuss ? `${preferenceToDiscuss.sentiment} ${preferenceToDiscuss.item}` : null
+            });
+        }
+
+        // Calculate social rewards based on compatibility
+        let socialReward = 0.5; // Base reward
+        if (compatibility > 0.5) {
+            socialReward += 0.3; // Bonus for talking to compatible agent
+        } else if (compatibility < -0.2) {
+            socialReward = 0.2; // Reduced reward for incompatible interaction
+        }
+
+        // Update moods
+        if (bot.moods && bot.moods.social !== undefined) {
+            bot.moods.social = Math.min(1.0, bot.moods.social + 0.1 * (1 + compatibility * 0.5));
+        }
+
+        // Give rewards
+        if (bot.rewards) {
+            bot.rewards.addReward(socialReward, `social_interaction (talked to ${targetName}, compat: ${compatibility.toFixed(2)})`);
+        }
+
+        // Update relationship in memory system with compatibility modifier
+        if (memorySystem && bot.uuid && targetBot?.uuid) {
+            memorySystem.updateRelationshipWithCompatibility(
+                bot.uuid,
+                targetBot.uuid,
+                targetName,
+                compatibility,
+                {
+                    type: compatibility > 0.3 ? 'friend' : (compatibility < -0.2 ? 'rival' : 'acquaintance'),
+                    bondChange: 0.05 * (1 + compatibility),
+                    trustChange: 0.02,
+                    wasCooperation: true,
+                    wasConflict: compatibility < -0.3
+                }
+            ).catch(err => console.error('[MEMORY] Failed to update relationship:', err.message));
+        }
+    }
+}
+
 function setupAgentEvents(bot) {
     // Note: Spawn event initialization moved to createAgent() to avoid race condition
     console.log(`[AGENT] ${bot.agentName} setting up event handlers`);
@@ -1120,7 +1302,7 @@ function setupAgentEvents(bot) {
             bot.pluginSensorClient.disconnect();
         }
 
-        // Save personality for offspring inheritance
+        // Save personality for offspring inheritance (ML personality)
         if (bot.personality && bot.uuid) {
             if (!agentPopulation.has(bot.agentName)) {
                 agentPopulation.set(bot.agentName, {});
@@ -1128,6 +1310,16 @@ function setupAgentEvents(bot) {
             const agentData = agentPopulation.get(bot.agentName);
             agentData.personality = bot.personality;
             console.log(`[ML_PERSONALITY] Saved ${bot.agentName}'s personality for offspring`);
+        }
+
+        // Save Sims personality for offspring inheritance
+        if (bot.simsPersonality && bot.uuid) {
+            if (!agentPopulation.has(bot.agentName)) {
+                agentPopulation.set(bot.agentName, {});
+            }
+            const agentData = agentPopulation.get(bot.agentName);
+            agentData.simsPersonality = bot.simsPersonality;
+            console.log(`[PERSONALITY] Saved ${bot.agentName}'s Sims personality for offspring`);
         }
 
         // Record death in village knowledge
@@ -1464,7 +1656,7 @@ async function startAgentBehavior(bot) {
                         if (success) {
                             bot.lastActionTime = Date.now();
 
-                            // Record experience for personality evolution
+                            // Record experience for personality evolution (ML personality)
                             if (mlPersonality && bot.personality) {
                                 const activityMap = {
                                     'mine': 'mining',
@@ -1489,8 +1681,66 @@ async function startAgentBehavior(bot) {
                                     }
                                 }
                             }
+
+                            // Record experience for Sims personality evolution
+                            if (personalitySystem && bot.simsPersonality) {
+                                const activityMap = {
+                                    'mine': 'mining',
+                                    'chop': 'gathering',
+                                    'dig': 'mining',
+                                    'attack': 'fighting',
+                                    'craft': 'crafting',
+                                    'fish': 'fishing',
+                                    'build': 'building',
+                                    'explore': 'exploring',
+                                    'trade': 'trading',
+                                    'farm': 'farming'
+                                };
+
+                                for (const [key, activity] of Object.entries(activityMap)) {
+                                    if (actionName.toLowerCase().includes(key)) {
+                                        personalitySystem.updateFromExperience(
+                                            bot.simsPersonality,
+                                            'activities',
+                                            activity,
+                                            true,  // success
+                                            0.05   // small increase per success
+                                        );
+                                        break;
+                                    }
+                                }
+                            }
                         } else {
                             bot.lastThought = `${actionName} didn't work out. Learning from this...`;
+
+                            // Record failure for Sims personality (negative experience)
+                            if (personalitySystem && bot.simsPersonality) {
+                                const activityMap = {
+                                    'mine': 'mining',
+                                    'chop': 'gathering',
+                                    'dig': 'mining',
+                                    'attack': 'fighting',
+                                    'craft': 'crafting',
+                                    'fish': 'fishing',
+                                    'build': 'building',
+                                    'explore': 'exploring',
+                                    'trade': 'trading',
+                                    'farm': 'farming'
+                                };
+
+                                for (const [key, activity] of Object.entries(activityMap)) {
+                                    if (actionName.toLowerCase().includes(key)) {
+                                        personalitySystem.updateFromExperience(
+                                            bot.simsPersonality,
+                                            'activities',
+                                            activity,
+                                            false,  // failure
+                                            0.03    // smaller negative impact
+                                        );
+                                        break;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1536,6 +1786,22 @@ async function startAgentBehavior(bot) {
                 console.error(`[ACTION CHAT] ${bot.agentName} chat error: ${error.message}`);
             }
         }, 30000); // Every 30 seconds
+    }
+
+    // Agent-to-Agent Communication with Personality Compatibility
+    // Agents periodically try to chat with nearby agents based on compatibility
+    if (config.features.enableAgentChat && chatLLM && personalitySystem) {
+        console.log(`[AGENT COMMUNICATION] ${bot.agentName} will periodically chat with nearby agents`);
+        setInterval(async () => {
+            try {
+                if (bot.health > 0 && bot.entity && bot.simsPersonality) {
+                    // Try to communicate with nearby agents
+                    await tryAgentCommunication(bot);
+                }
+            } catch (error) {
+                console.error(`[AGENT COMMUNICATION] ${bot.agentName} communication error: ${error.message}`);
+            }
+        }, config.agents.chatInterval || 30000); // Every 30 seconds (default)
     }
 }
 

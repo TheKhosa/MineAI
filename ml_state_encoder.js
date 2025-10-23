@@ -11,7 +11,22 @@ const { getMoodlesSystem } = require('./ml_zomboid_moodles');
 class StateEncoder {
     constructor() {
         // State vector dimensions
-        this.STATE_SIZE = 694;  // Expanded: 429 base + 200 plugin sensors + 65 additional mineflayer data (was 429 → 629 → 694)
+        this.STATE_SIZE = 1028;  // Target expansion as per WORLD_DATA_COMPREHENSIVE_GUIDE.md (was 694, now 1028)
+        // Note: Guide specifies 629→1028 (+399), but actual base was 694. Implementing to reach 1028 target.
+
+        // NEW ADVANCED FEATURE SIZES (Total: +334 dimensions to reach 1028)
+        this.ADVANCED_INVENTORY_SIZE = 50;   // Detailed item analysis
+        this.TOOL_CAPABILITIES_SIZE = 30;    // Tool durability, efficiency, enchantments
+        this.ENTITY_BEHAVIOR_SIZE = 40;      // Mob AI states, pathfinding
+        this.VEHICLE_STATE_SIZE = 20;        // Boat, minecart, horse status
+        this.DIMENSION_CONTEXT_SIZE = 30;    // Overworld, Nether, End features
+        this.WEATHER_EFFECTS_SIZE = 15;      // Rain impact on fishing, crops, mobs
+        this.CHUNK_BOUNDARIES_SIZE = 25;     // Chunk loading, entity density
+        this.VILLAGER_ECONOMY_SIZE = 35;     // Villager trades, prices, availability
+        this.STRUCTURE_PROXIMITY_SIZE = 40;  // Distance to villages, strongholds, etc.
+        this.ADVANCED_COMBAT_SIZE = 50;      // Weapon cooldowns, mob weaknesses
+        this.WORLD_TIME_SIZE = 15;           // Time-based opportunities
+        this.TERRAIN_ANALYSIS_SIZE = 49;     // Biome features, elevation
 
         // Sub-vector sizes
         this.POSITION_SIZE = 3;
@@ -135,6 +150,20 @@ class StateEncoder {
         offset = this.encodeEffects(bot, state, offset);             // +20
         offset = this.encodeEquipment(bot, state, offset);           // +15
         offset = this.encodeNearbyPlayers(bot, state, offset);       // +10
+
+        // 28-39. NEW ADVANCED FEATURES (334 values) - Comprehensive world analysis
+        offset = this.encodeAdvancedInventory(bot, state, offset);   // +50
+        offset = this.encodeToolCapabilities(bot, state, offset);    // +30
+        offset = this.encodeEntityBehavior(bot, state, offset);      // +40
+        offset = this.encodeVehicleState(bot, state, offset);        // +20
+        offset = this.encodeDimensionContext(bot, state, offset);    // +30
+        offset = this.encodeWeatherEffects(bot, state, offset);      // +15
+        offset = this.encodeChunkBoundaries(bot, state, offset);     // +25
+        offset = this.encodeVillagerEconomy(bot, state, offset);     // +35
+        offset = this.encodeStructureProximity(bot, state, offset);  // +40
+        offset = this.encodeAdvancedCombat(bot, state, offset);      // +50
+        offset = this.encodeWorldTime(bot, state, offset);           // +15
+        offset = this.encodeTerrainAnalysis(bot, state, offset);     // +49
 
         // Fill remaining with zeros if needed
         while (offset < this.STATE_SIZE) {
@@ -1930,6 +1959,1567 @@ class StateEncoder {
         state[offset++] = players.length === 0 ? 1.0 : 0.0;
 
         return offset;
+    }
+
+    // ==================== NEW ADVANCED ENCODING METHODS (+334 dimensions) ====================
+
+    /**
+     * Encode advanced inventory analysis (50 dimensions)
+     * Detailed item categorization, value assessment, and strategic planning
+     */
+    encodeAdvancedInventory(bot, state, offset) {
+        const items = bot.inventory.items();
+
+        // Feature 1-10: Item category counts (normalized to [0, 1])
+        const categories = {
+            tools: ['pickaxe', 'axe', 'shovel', 'hoe'],
+            weapons: ['sword', 'bow', 'trident', 'crossbow'],
+            armor: ['helmet', 'chestplate', 'leggings', 'boots'],
+            food: ['beef', 'pork', 'chicken', 'bread', 'apple', 'carrot', 'potato'],
+            ores: ['coal', 'iron_ore', 'gold_ore', 'diamond_ore', 'iron_ingot', 'gold_ingot', 'diamond'],
+            building: ['cobblestone', 'stone', 'dirt', 'planks', 'glass', 'brick'],
+            utility: ['torch', 'bucket', 'bed', 'crafting_table', 'furnace'],
+            combat: ['arrow', 'shield', 'tnt', 'potion'],
+            farming: ['seeds', 'wheat', 'sapling', 'bone_meal'],
+            rare: ['emerald', 'netherite', 'ancient_debris', 'elytra', 'totem']
+        };
+
+        Object.values(categories).forEach(catItems => {
+            const count = items.filter(item =>
+                catItems.some(cat => item.name.includes(cat))
+            ).reduce((sum, item) => sum + item.count, 0);
+            state[offset++] = Math.min(1.0, count / 64.0);
+        });
+
+        // Feature 11: Total inventory slots used
+        state[offset++] = items.length / 36.0;
+
+        // Feature 12: Inventory fullness (weighted by stack sizes)
+        const totalItems = items.reduce((sum, item) => sum + item.count, 0);
+        state[offset++] = Math.min(1.0, totalItems / (36 * 64));
+
+        // Feature 13-17: Tool tier assessment (0=none, 0.25=wood, 0.5=stone, 0.75=iron, 1.0=diamond)
+        const toolTiers = {
+            pickaxe: ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe', 'diamond_pickaxe'],
+            axe: ['wooden_axe', 'stone_axe', 'iron_axe', 'diamond_axe'],
+            sword: ['wooden_sword', 'stone_sword', 'iron_sword', 'diamond_sword'],
+            shovel: ['wooden_shovel', 'stone_shovel', 'iron_shovel', 'diamond_shovel'],
+            hoe: ['wooden_hoe', 'stone_hoe', 'iron_hoe', 'diamond_hoe']
+        };
+
+        Object.entries(toolTiers).forEach(([toolType, tiers]) => {
+            let maxTier = 0;
+            tiers.forEach((tierName, idx) => {
+                if (items.some(item => item.name === tierName)) {
+                    maxTier = Math.max(maxTier, (idx + 1) / tiers.length);
+                }
+            });
+            state[offset++] = maxTier;
+        });
+
+        // Feature 18: Has crafting table
+        state[offset++] = items.some(item => item.name === 'crafting_table') ? 1.0 : 0.0;
+
+        // Feature 19: Has furnace
+        state[offset++] = items.some(item => item.name === 'furnace') ? 1.0 : 0.0;
+
+        // Feature 20: Has bed
+        state[offset++] = items.some(item => item.name.includes('bed')) ? 1.0 : 0.0;
+
+        // Feature 21-25: Resource sufficiency for key crafts
+        const hasCraftingMaterials = {
+            canCraftPickaxe: items.some(item => ['cobblestone', 'iron_ingot', 'diamond'].includes(item.name)),
+            canCraftSword: items.some(item => ['cobblestone', 'iron_ingot', 'diamond'].includes(item.name)),
+            canCraftArmor: items.some(item => ['iron_ingot', 'diamond'].includes(item.name)),
+            canCraftTorches: items.some(item => item.name === 'coal' || item.name === 'charcoal'),
+            canSmeltIron: items.some(item => item.name === 'iron_ore' || item.name === 'raw_iron')
+        };
+
+        Object.values(hasCraftingMaterials).forEach(canCraft => {
+            state[offset++] = canCraft ? 1.0 : 0.0;
+        });
+
+        // Feature 26-30: Food supply assessment
+        const foodItems = items.filter(item =>
+            ['beef', 'pork', 'chicken', 'bread', 'apple', 'carrot', 'potato', 'fish'].some(f => item.name.includes(f))
+        );
+        const totalFood = foodItems.reduce((sum, item) => sum + item.count, 0);
+        state[offset++] = Math.min(1.0, totalFood / 20.0); // Total food count
+
+        const cookedFood = foodItems.filter(item => item.name.includes('cooked')).reduce((s, i) => s + i.count, 0);
+        state[offset++] = Math.min(1.0, cookedFood / 10.0); // Cooked food
+
+        const rawFood = totalFood - cookedFood;
+        state[offset++] = Math.min(1.0, rawFood / 10.0); // Raw food
+
+        state[offset++] = totalFood > 5 ? 1.0 : 0.0; // Has food surplus
+        state[offset++] = totalFood < 2 ? 1.0 : 0.0; // Food scarcity
+
+        // Feature 31-35: Combat readiness
+        const hasWeapon = items.some(item => item.name.includes('sword') || item.name.includes('axe'));
+        const hasRanged = items.some(item => item.name === 'bow' || item.name === 'crossbow');
+        const hasArrows = items.some(item => item.name === 'arrow');
+        const hasShield = items.some(item => item.name === 'shield');
+        const hasArmor = bot.inventory.slots[5] || bot.inventory.slots[6] || bot.inventory.slots[7] || bot.inventory.slots[8];
+
+        state[offset++] = hasWeapon ? 1.0 : 0.0;
+        state[offset++] = hasRanged ? 1.0 : 0.0;
+        state[offset++] = hasArrows ? 1.0 : 0.0;
+        state[offset++] = hasShield ? 1.0 : 0.0;
+        state[offset++] = hasArmor ? 1.0 : 0.0;
+
+        // Feature 36-40: Valuable items
+        const diamonds = items.filter(item => item.name === 'diamond').reduce((s, i) => s + i.count, 0);
+        const emeralds = items.filter(item => item.name === 'emerald').reduce((s, i) => s + i.count, 0);
+        const gold = items.filter(item => item.name === 'gold_ingot').reduce((s, i) => s + i.count, 0);
+        const iron = items.filter(item => item.name === 'iron_ingot').reduce((s, i) => s + i.count, 0);
+        const coal = items.filter(item => item.name === 'coal').reduce((s, i) => s + i.count, 0);
+
+        state[offset++] = Math.min(1.0, diamonds / 10.0);
+        state[offset++] = Math.min(1.0, emeralds / 10.0);
+        state[offset++] = Math.min(1.0, gold / 20.0);
+        state[offset++] = Math.min(1.0, iron / 30.0);
+        state[offset++] = Math.min(1.0, coal / 64.0);
+
+        // Feature 41-45: Strategic item presence
+        state[offset++] = items.some(item => item.name === 'water_bucket') ? 1.0 : 0.0;
+        state[offset++] = items.some(item => item.name === 'lava_bucket') ? 1.0 : 0.0;
+        state[offset++] = items.some(item => item.name === 'ender_pearl') ? 1.0 : 0.0;
+        state[offset++] = items.some(item => item.name === 'golden_apple') ? 1.0 : 0.0;
+        state[offset++] = items.some(item => item.name.includes('potion')) ? 1.0 : 0.0;
+
+        // Feature 46-50: Inventory management needs
+        const needsOrganization = items.length > 30 ? 1.0 : 0.0;
+        const hasJunk = items.filter(item => ['dirt', 'cobblestone', 'rotten_flesh'].includes(item.name)).length > 5;
+        const duplicateTools = items.filter(item => item.name.includes('pickaxe')).length > 1;
+
+        state[offset++] = needsOrganization;
+        state[offset++] = hasJunk ? 1.0 : 0.0;
+        state[offset++] = duplicateTools ? 1.0 : 0.0;
+        state[offset++] = items.length < 10 ? 1.0 : 0.0; // Has inventory space
+        state[offset++] = items.length >= 35 ? 1.0 : 0.0; // Nearly full
+
+        return offset;
+    }
+
+    /**
+     * Encode tool capabilities (30 dimensions)
+     * Durability, efficiency, enchantments for all tools
+     */
+    encodeToolCapabilities(bot, state, offset) {
+        const getDurability = (item) => {
+            if (!item || !item.durabilityUsed || !item.maxDurability) return 1.0;
+            return Math.max(0, 1.0 - (item.durabilityUsed / item.maxDurability));
+        };
+
+        const getEnchantLevel = (item, enchantName) => {
+            if (!item || !item.enchants) return 0;
+            const enchant = item.enchants.find(e => e.name === enchantName);
+            return enchant ? enchant.lvl : 0;
+        };
+
+        const findBestTool = (toolType) => {
+            return bot.inventory.items().find(item => item.name.includes(toolType));
+        };
+
+        // Feature 1-6: Tool durability (pickaxe, axe, sword, shovel, hoe, shield)
+        const toolTypes = ['pickaxe', 'axe', 'sword', 'shovel', 'hoe', 'shield'];
+        toolTypes.forEach(toolType => {
+            const tool = findBestTool(toolType);
+            state[offset++] = getDurability(tool);
+        });
+
+        // Feature 7: Held item durability
+        state[offset++] = getDurability(bot.heldItem);
+
+        // Feature 8-13: Tool enchantment levels (normalized)
+        const heldItem = bot.heldItem;
+        state[offset++] = getEnchantLevel(heldItem, 'efficiency') / 5.0;
+        state[offset++] = getEnchantLevel(heldItem, 'fortune') / 3.0;
+        state[offset++] = getEnchantLevel(heldItem, 'silk_touch') > 0 ? 1.0 : 0.0;
+        state[offset++] = getEnchantLevel(heldItem, 'sharpness') / 5.0;
+        state[offset++] = getEnchantLevel(heldItem, 'unbreaking') / 3.0;
+        state[offset++] = getEnchantLevel(heldItem, 'mending') > 0 ? 1.0 : 0.0;
+
+        // Feature 14-18: Best tool efficiency for each category
+        ['pickaxe', 'axe', 'sword', 'shovel', 'hoe'].forEach(toolType => {
+            const tool = findBestTool(toolType);
+            const effLevel = getEnchantLevel(tool, 'efficiency');
+            state[offset++] = effLevel / 5.0;
+        });
+
+        // Feature 19-23: Tool repair needs (< 20% durability)
+        toolTypes.slice(0, 5).forEach(toolType => {
+            const tool = findBestTool(toolType);
+            const needsRepair = getDurability(tool) < 0.2;
+            state[offset++] = needsRepair ? 1.0 : 0.0;
+        });
+
+        // Feature 24: Has anvil for repairs
+        state[offset++] = bot.inventory.items().some(item => item.name === 'anvil') ? 1.0 : 0.0;
+
+        // Feature 25: Has enchanting table
+        const hasEnchantingTable = bot.findBlock({
+            matching: block => block.name === 'enchanting_table',
+            maxDistance: 32
+        });
+        state[offset++] = hasEnchantingTable ? 1.0 : 0.0;
+
+        // Feature 26-27: Tool material tier (average)
+        const toolMaterials = bot.inventory.items()
+            .filter(item => toolTypes.some(t => item.name.includes(t)))
+            .map(item => {
+                if (item.name.includes('diamond')) return 1.0;
+                if (item.name.includes('iron')) return 0.75;
+                if (item.name.includes('stone')) return 0.5;
+                if (item.name.includes('wooden')) return 0.25;
+                return 0;
+            });
+        const avgToolTier = toolMaterials.length > 0 ?
+            toolMaterials.reduce((a, b) => a + b, 0) / toolMaterials.length : 0;
+        state[offset++] = avgToolTier;
+
+        // Feature 28: Best tool tier
+        state[offset++] = toolMaterials.length > 0 ? Math.max(...toolMaterials) : 0;
+
+        // Feature 29-30: Tool set completeness
+        const hasCompleteToolSet = toolTypes.slice(0, 5).every(t => findBestTool(t));
+        const toolSetCount = toolTypes.slice(0, 5).filter(t => findBestTool(t)).length;
+        state[offset++] = hasCompleteToolSet ? 1.0 : 0.0;
+        state[offset++] = toolSetCount / 5.0;
+
+        return offset;
+    }
+
+    /**
+     * Encode entity behavior (40 dimensions)
+     * Mob AI states, pathfinding, targeting, spawn conditions
+     */
+    encodeEntityBehavior(bot, state, offset) {
+        const nearbyEntities = Object.values(bot.entities)
+            .filter(e => e.position && e.position.distanceTo(bot.entity.position) < 16);
+
+        // Feature 1-5: Hostile mob AI states (zombie, skeleton, spider, creeper, enderman)
+        const hostileMobs = ['zombie', 'skeleton', 'spider', 'creeper', 'enderman'];
+        hostileMobs.forEach(mobType => {
+            const mob = nearbyEntities.find(e => e.name === mobType);
+            if (mob && mob.position) {
+                const dist = mob.position.distanceTo(bot.entity.position);
+                state[offset++] = 1.0 - Math.min(1.0, dist / 16.0); // Closer = higher value
+            } else {
+                state[offset++] = 0;
+            }
+        });
+
+        // Feature 6-10: Passive mob counts (cow, pig, sheep, chicken, horse)
+        const passiveMobs = ['cow', 'pig', 'sheep', 'chicken', 'horse'];
+        passiveMobs.forEach(mobType => {
+            const count = nearbyEntities.filter(e => e.name === mobType).length;
+            state[offset++] = Math.min(1.0, count / 5.0);
+        });
+
+        // Feature 11-13: Villager AI states
+        const villagers = nearbyEntities.filter(e => e.name === 'villager');
+        state[offset++] = Math.min(1.0, villagers.length / 5.0); // Villager count
+
+        const closestVillager = villagers.sort((a, b) =>
+            a.position.distanceTo(bot.entity.position) - b.position.distanceTo(bot.entity.position)
+        )[0];
+        if (closestVillager) {
+            const dist = closestVillager.position.distanceTo(bot.entity.position);
+            state[offset++] = 1.0 - Math.min(1.0, dist / 16.0);
+            state[offset++] = 1.0; // Has nearby villager
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 14-16: Iron golem presence (protection indicator)
+        const ironGolems = nearbyEntities.filter(e => e.name === 'iron_golem');
+        state[offset++] = ironGolems.length > 0 ? 1.0 : 0.0;
+        if (ironGolems.length > 0) {
+            const dist = ironGolems[0].position.distanceTo(bot.entity.position);
+            state[offset++] = 1.0 - Math.min(1.0, dist / 16.0);
+            state[offset++] = 1.0; // In protected area
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 17-20: Entity targeting (is mob targeting the bot?)
+        const targetingBot = nearbyEntities.filter(e =>
+            e.name && hostileMobs.includes(e.name) &&
+            e.position && e.position.distanceTo(bot.entity.position) < 8
+        );
+        state[offset++] = Math.min(1.0, targetingBot.length / 3.0); // Threat count
+        state[offset++] = targetingBot.length > 0 ? 1.0 : 0.0; // Is being targeted
+
+        const closestThreat = targetingBot[0];
+        if (closestThreat) {
+            const dist = closestThreat.position.distanceTo(bot.entity.position);
+            state[offset++] = 1.0 - Math.min(1.0, dist / 8.0); // Threat proximity
+            state[offset++] = dist < 3 ? 1.0 : 0.0; // Immediate danger
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 21-25: Spawn condition detection
+        const pos = bot.entity.position;
+        const block = bot.blockAt(pos);
+        const lightLevel = block ? block.light : 15;
+
+        state[offset++] = lightLevel / 15.0; // Current light level
+        state[offset++] = lightLevel < 7 ? 1.0 : 0.0; // Mob spawn possible
+        state[offset++] = lightLevel === 0 ? 1.0 : 0.0; // Complete darkness
+        state[offset++] = (bot.time.timeOfDay % 24000) > 13000 ? 1.0 : 0.0; // Is night
+        state[offset++] = nearbyEntities.filter(e => hostileMobs.includes(e.name)).length > 0 ? 1.0 : 0.0; // Hostile presence
+
+        // Feature 26-30: Entity pathfinding (movement patterns)
+        const movingEntities = nearbyEntities.filter(e =>
+            e.velocity && (Math.abs(e.velocity.x) > 0.1 || Math.abs(e.velocity.z) > 0.1)
+        );
+        state[offset++] = Math.min(1.0, movingEntities.length / 10.0); // Moving entity count
+
+        const approachingEntities = nearbyEntities.filter(e => {
+            if (!e.position || !e.velocity) return false;
+            const dx = bot.entity.position.x - e.position.x;
+            const dz = bot.entity.position.z - e.position.z;
+            const dot = dx * e.velocity.x + dz * e.velocity.z;
+            return dot > 0; // Moving towards bot
+        });
+        state[offset++] = Math.min(1.0, approachingEntities.length / 5.0); // Approaching count
+        state[offset++] = approachingEntities.some(e => hostileMobs.includes(e.name)) ? 1.0 : 0.0; // Hostile approaching
+
+        const fleeingEntities = nearbyEntities.filter(e => {
+            if (!e.position || !e.velocity) return false;
+            const dx = bot.entity.position.x - e.position.x;
+            const dz = bot.entity.position.z - e.position.z;
+            const dot = dx * e.velocity.x + dz * e.velocity.z;
+            return dot < 0; // Moving away
+        });
+        state[offset++] = Math.min(1.0, fleeingEntities.length / 5.0); // Fleeing count
+        state[offset++] = fleeingEntities.some(e => passiveMobs.includes(e.name)) ? 1.0 : 0.0; // Passive fleeing (fear)
+
+        // Feature 31-35: Special entity states
+        const items = nearbyEntities.filter(e => e.name === 'item');
+        const xpOrbs = nearbyEntities.filter(e => e.name === 'experience_orb');
+        const arrows = nearbyEntities.filter(e => e.name === 'arrow');
+
+        state[offset++] = Math.min(1.0, items.length / 10.0); // Dropped items
+        state[offset++] = Math.min(1.0, xpOrbs.length / 5.0); // XP orbs
+        state[offset++] = Math.min(1.0, arrows.length / 3.0); // Projectiles
+        state[offset++] = items.length > 5 ? 1.0 : 0.0; // Loot available
+        state[offset++] = arrows.length > 0 ? 1.0 : 0.0; // Under ranged attack
+
+        // Feature 36-40: Entity density by range
+        const veryClose = nearbyEntities.filter(e => e.position.distanceTo(bot.entity.position) < 3).length;
+        const close = nearbyEntities.filter(e => e.position.distanceTo(bot.entity.position) < 8).length;
+        const medium = nearbyEntities.filter(e => e.position.distanceTo(bot.entity.position) < 16).length;
+
+        state[offset++] = Math.min(1.0, veryClose / 3.0); // Very close entities
+        state[offset++] = Math.min(1.0, close / 10.0); // Close entities
+        state[offset++] = Math.min(1.0, medium / 20.0); // Medium range entities
+        state[offset++] = veryClose > 0 ? 1.0 : 0.0; // Crowded
+        state[offset++] = medium === 0 ? 1.0 : 0.0; // Isolated
+
+        return offset;
+    }
+
+    /**
+     * Encode vehicle state (20 dimensions)
+     * Boat, minecart, horse status and capabilities
+     */
+    encodeVehicleState(bot, state, offset) {
+        // Feature 1: Is mounted on any vehicle
+        const isMounted = bot.vehicle !== null;
+        state[offset++] = isMounted ? 1.0 : 0.0;
+
+        // Feature 2-4: Vehicle type (one-hot: horse, boat, minecart)
+        if (bot.vehicle) {
+            state[offset++] = bot.vehicle.name && bot.vehicle.name.includes('horse') ? 1.0 : 0.0;
+            state[offset++] = bot.vehicle.name === 'boat' ? 1.0 : 0.0;
+            state[offset++] = bot.vehicle.name && bot.vehicle.name.includes('minecart') ? 1.0 : 0.0;
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 5-7: Vehicle health and condition
+        if (bot.vehicle) {
+            const vehicleHealth = bot.vehicle.health || 20;
+            const maxHealth = bot.vehicle.maxHealth || 20;
+            state[offset++] = vehicleHealth / maxHealth; // Health ratio
+            state[offset++] = vehicleHealth < 5 ? 1.0 : 0.0; // Low health warning
+            state[offset++] = 1.0; // Has vehicle
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 8-10: Horse-specific stats (speed, jump strength)
+        if (bot.vehicle && bot.vehicle.name && bot.vehicle.name.includes('horse')) {
+            // Horse speed typically 0.1125 to 0.3375 blocks/tick
+            const speed = bot.vehicle.attributes?.movement_speed || 0.225;
+            state[offset++] = (speed - 0.1125) / (0.3375 - 0.1125); // Normalized speed
+
+            // Jump strength typically 0.4 to 1.0 (can jump 1-5 blocks)
+            const jump = bot.vehicle.attributes?.horse_jump_strength || 0.7;
+            state[offset++] = (jump - 0.4) / (1.0 - 0.4); // Normalized jump
+
+            state[offset++] = 1.0; // Is horse
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 11: Has saddle in inventory
+        state[offset++] = bot.inventory.items().some(item => item.name === 'saddle') ? 1.0 : 0.0;
+
+        // Feature 12-14: Nearby rideable entities
+        const nearbyHorses = Object.values(bot.entities).filter(e =>
+            e.name && e.name.includes('horse') &&
+            e.position && e.position.distanceTo(bot.entity.position) < 8
+        );
+        const nearbyBoats = Object.values(bot.entities).filter(e =>
+            e.name === 'boat' &&
+            e.position && e.position.distanceTo(bot.entity.position) < 8
+        );
+        const nearbyMinecarts = Object.values(bot.entities).filter(e =>
+            e.name && e.name.includes('minecart') &&
+            e.position && e.position.distanceTo(bot.entity.position) < 8
+        );
+
+        state[offset++] = nearbyHorses.length > 0 ? 1.0 : 0.0;
+        state[offset++] = nearbyBoats.length > 0 ? 1.0 : 0.0;
+        state[offset++] = nearbyMinecarts.length > 0 ? 1.0 : 0.0;
+
+        // Feature 15: Has boat in inventory
+        state[offset++] = bot.inventory.items().some(item => item.name.includes('boat')) ? 1.0 : 0.0;
+
+        // Feature 16: Has minecart in inventory
+        state[offset++] = bot.inventory.items().some(item => item.name.includes('minecart')) ? 1.0 : 0.0;
+
+        // Feature 17: Is in water (boat recommended)
+        state[offset++] = bot.entity.isInWater ? 1.0 : 0.0;
+
+        // Feature 18: Is on rails (minecart recommended)
+        const blockBelow = bot.blockAt(bot.entity.position.offset(0, -1, 0));
+        const isOnRails = blockBelow && blockBelow.name && blockBelow.name.includes('rail');
+        state[offset++] = isOnRails ? 1.0 : 0.0;
+
+        // Feature 19-20: Vehicle utility assessment
+        const needsWaterTransport = bot.entity.isInWater && !bot.vehicle;
+        const canUseHorse = nearbyHorses.length > 0 && bot.inventory.items().some(i => i.name === 'saddle');
+
+        state[offset++] = needsWaterTransport ? 1.0 : 0.0;
+        state[offset++] = canUseHorse ? 1.0 : 0.0;
+
+        return offset;
+    }
+
+    /**
+     * Encode dimension context (30 dimensions)
+     * Overworld, Nether, End-specific features and strategies
+     */
+    encodeDimensionContext(bot, state, offset) {
+        const pos = bot.entity.position;
+
+        // Feature 1-3: Current dimension (one-hot: overworld, nether, end)
+        // Detect dimension based on Y-level and nearby blocks
+        const nearbyBlocks = [];
+        for (let y = -2; y <= 2; y++) {
+            for (let x = -2; x <= 2; x++) {
+                for (let z = -2; z <= 2; z++) {
+                    const block = bot.blockAt(pos.offset(x, y, z));
+                    if (block) nearbyBlocks.push(block.name);
+                }
+            }
+        }
+
+        const hasNetherrack = nearbyBlocks.some(b => b === 'netherrack');
+        const hasEndStone = nearbyBlocks.some(b => b === 'end_stone');
+        const isNether = hasNetherrack || (pos.y >= 0 && pos.y <= 128 && nearbyBlocks.some(b => b === 'bedrock'));
+        const isEnd = hasEndStone;
+        const isOverworld = !isNether && !isEnd;
+
+        state[offset++] = isOverworld ? 1.0 : 0.0;
+        state[offset++] = isNether ? 1.0 : 0.0;
+        state[offset++] = isEnd ? 1.0 : 0.0;
+
+        // Feature 4-8: Overworld-specific features
+        if (isOverworld) {
+            state[offset++] = pos.y / 256.0; // Y-level (normalized)
+            state[offset++] = pos.y < 0 ? 1.0 : 0.0; // Is in caves (below sea level)
+            state[offset++] = pos.y < -32 ? 1.0 : 0.0; // Is in deepslate layer
+            state[offset++] = pos.y > 64 ? 1.0 : 0.0; // Is on surface
+
+            // Biome indicator (simplified)
+            const block = bot.blockAt(pos);
+            const biomeTemp = block?.biome?.temperature || 0.5;
+            state[offset++] = biomeTemp; // 0=cold, 0.5=temperate, 1.0=hot
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 9-13: Nether-specific features
+        if (isNether) {
+            state[offset++] = 1.0; // Is in Nether
+            state[offset++] = nearbyBlocks.some(b => b === 'lava') ? 1.0 : 0.0; // Lava nearby
+            state[offset++] = nearbyBlocks.some(b => b === 'soul_sand') ? 1.0 : 0.0; // Soul sand valley
+            state[offset++] = nearbyBlocks.some(b => b === 'nether_fortress') ? 1.0 : 0.0; // Fortress nearby
+            state[offset++] = nearbyBlocks.some(b => b === 'ancient_debris') ? 1.0 : 0.0; // Netherite mining area
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 14-18: End-specific features
+        if (isEnd) {
+            state[offset++] = 1.0; // Is in End
+            state[offset++] = nearbyBlocks.some(b => b === 'obsidian') ? 1.0 : 0.0; // Obsidian platform
+
+            // Dragon fight detection
+            const enderDragon = Object.values(bot.entities).find(e => e.name === 'ender_dragon');
+            state[offset++] = enderDragon ? 1.0 : 0.0; // Dragon present
+            state[offset++] = enderDragon && enderDragon.position ?
+                1.0 - Math.min(1.0, enderDragon.position.distanceTo(pos) / 100.0) : 0; // Dragon proximity
+
+            state[offset++] = nearbyBlocks.some(b => b === 'end_portal') ? 1.0 : 0.0; // Exit portal
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 19-23: Portal proximity and readiness
+        const netherPortalBlocks = nearbyBlocks.filter(b => b === 'nether_portal').length;
+        state[offset++] = netherPortalBlocks > 0 ? 1.0 : 0.0; // Portal nearby
+        state[offset++] = Math.min(1.0, netherPortalBlocks / 10.0); // Portal block count
+
+        const hasObsidian = bot.inventory.items().some(item => item.name === 'obsidian');
+        const hasFlintSteel = bot.inventory.items().some(item => item.name === 'flint_and_steel');
+        state[offset++] = hasObsidian ? 1.0 : 0.0; // Can build portal
+        state[offset++] = hasFlintSteel ? 1.0 : 0.0; // Can light portal
+        state[offset++] = (hasObsidian && hasFlintSteel) ? 1.0 : 0.0; // Portal ready
+
+        // Feature 24-28: Dimension-specific resources
+        if (isOverworld) {
+            state[offset++] = nearbyBlocks.some(b => b.includes('ore')) ? 1.0 : 0.0; // Ores nearby
+            state[offset++] = nearbyBlocks.some(b => b.includes('log')) ? 1.0 : 0.0; // Trees nearby
+            state[offset++] = nearbyBlocks.some(b => b === 'water') ? 1.0 : 0.0; // Water nearby
+            state[offset++] = 1.0; // Renewable resources available
+            state[offset++] = 0; // Nether-specific resources
+        } else if (isNether) {
+            state[offset++] = nearbyBlocks.some(b => b === 'nether_quartz_ore') ? 1.0 : 0.0; // Quartz
+            state[offset++] = nearbyBlocks.some(b => b === 'nether_gold_ore') ? 1.0 : 0.0; // Gold
+            state[offset++] = nearbyBlocks.some(b => b === 'ancient_debris') ? 1.0 : 0.0; // Netherite
+            state[offset++] = 0; // No renewable resources
+            state[offset++] = 1.0; // Nether-specific resources
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 29-30: Dimension danger level
+        const dimensionDanger = isNether ? 0.8 : (isEnd ? 1.0 : 0.3);
+        state[offset++] = dimensionDanger;
+
+        const hasFireResist = bot.entity.effects && Object.values(bot.entity.effects).some(e =>
+            e.id === 12 // Fire Resistance potion
+        );
+        state[offset++] = hasFireResist ? 1.0 : 0.0; // Fire protection
+
+        return offset;
+    }
+
+    /**
+     * Encode weather effects (15 dimensions)
+     * Rain impact on fishing, crops, mob behavior
+     */
+    encodeWeatherEffects(bot, state, offset) {
+        // Feature 1-3: Basic weather state
+        state[offset++] = bot.isRaining ? 1.0 : 0.0;
+        state[offset++] = bot.thunderState > 0 ? 1.0 : 0.0;
+        state[offset++] = (!bot.isRaining && bot.thunderState === 0) ? 1.0 : 0.0; // Clear weather
+
+        // Feature 4-5: Rain intensity
+        if (bot.isRaining) {
+            state[offset++] = bot.rainState / 1.0; // Rain intensity (0-1)
+            state[offset++] = bot.rainState > 0.5 ? 1.0 : 0.0; // Heavy rain
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 6: Fishing bonus (rain improves fishing)
+        const hasFishingRod = bot.inventory.items().some(item => item.name === 'fishing_rod');
+        const fishingBonus = bot.isRaining && hasFishingRod;
+        state[offset++] = fishingBonus ? 1.0 : 0.0;
+
+        // Feature 7-8: Crop growth effects
+        const nearbyFarmland = [];
+        const pos = bot.entity.position;
+        for (let y = -1; y <= 1; y++) {
+            for (let x = -3; x <= 3; x++) {
+                for (let z = -3; z <= 3; z++) {
+                    const block = bot.blockAt(pos.offset(x, y, z));
+                    if (block && block.name === 'farmland') {
+                        nearbyFarmland.push(block);
+                    }
+                }
+            }
+        }
+
+        const hasFarmland = nearbyFarmland.length > 0;
+        const rainWateringCrops = bot.isRaining && hasFarmland;
+        state[offset++] = rainWateringCrops ? 1.0 : 0.0; // Rain hydrating crops
+        state[offset++] = hasFarmland ? nearbyFarmland.length / 20.0 : 0; // Farmland count
+
+        // Feature 9-10: Lightning danger
+        if (bot.thunderState > 0) {
+            // Lightning can strike, especially dangerous in open areas
+            const isUnderRoof = this.isUnderRoof(bot);
+            state[offset++] = isUnderRoof ? 0.0 : 1.0; // Lightning danger
+            state[offset++] = 1.0; // Thunderstorm active
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        // Feature 11: Skeleton burning prevention (rain stops skeletons from burning)
+        const isDaytime = (bot.time.timeOfDay % 24000) < 13000;
+        const skeletonsSafe = bot.isRaining && isDaytime;
+        state[offset++] = skeletonsSafe ? 1.0 : 0.0; // Rain protecting undead
+
+        // Feature 12-13: Visibility effects
+        if (bot.isRaining || bot.thunderState > 0) {
+            state[offset++] = 0.7; // Reduced visibility
+            state[offset++] = 1.0; // Weather affecting vision
+        } else {
+            state[offset++] = 1.0; // Clear visibility
+            state[offset++] = 0;
+        }
+
+        // Feature 14: Mob spawn rate changes (rain increases spawn rate)
+        const increasedSpawns = bot.isRaining && !isDaytime;
+        state[offset++] = increasedSpawns ? 1.0 : 0.0;
+
+        // Feature 15: Weather-based strategy (should seek shelter?)
+        const shouldSeekShelter = bot.thunderState > 0 && !this.isUnderRoof(bot);
+        state[offset++] = shouldSeekShelter ? 1.0 : 0.0;
+
+        return offset;
+    }
+
+    /**
+     * Encode chunk boundaries (25 dimensions)
+     * Chunk loading, entity density, performance optimization
+     */
+    encodeChunkBoundaries(bot, state, offset) {
+        const pos = bot.entity.position;
+        const chunkX = Math.floor(pos.x / 16);
+        const chunkZ = Math.floor(pos.z / 16);
+
+        // Feature 1-2: Current chunk coordinates (normalized)
+        state[offset++] = (chunkX % 256) / 256.0; // Chunk X (mod 256 for normalization)
+        state[offset++] = (chunkZ % 256) / 256.0; // Chunk Z
+
+        // Feature 3-4: Position within chunk (0-15)
+        const localX = Math.floor(pos.x) % 16;
+        const localZ = Math.floor(pos.z) % 16;
+        state[offset++] = localX / 16.0;
+        state[offset++] = localZ / 16.0;
+
+        // Feature 5: Distance to chunk center
+        const chunkCenterX = chunkX * 16 + 8;
+        const chunkCenterZ = chunkZ * 16 + 8;
+        const distToCenter = Math.sqrt((pos.x - chunkCenterX) ** 2 + (pos.z - chunkCenterZ) ** 2);
+        state[offset++] = distToCenter / 11.31; // Max distance is ~11.31 blocks
+
+        // Feature 6: Near chunk boundary (within 2 blocks)
+        const nearBoundary = (localX < 2 || localX > 13 || localZ < 2 || localZ > 13);
+        state[offset++] = nearBoundary ? 1.0 : 0.0;
+
+        // Feature 7-10: Entity density in surrounding chunks
+        const entities = Object.values(bot.entities);
+        const entitiesInChunk = entities.filter(e => {
+            if (!e.position) return false;
+            const eChunkX = Math.floor(e.position.x / 16);
+            const eChunkZ = Math.floor(e.position.z / 16);
+            return eChunkX === chunkX && eChunkZ === chunkZ;
+        });
+
+        state[offset++] = Math.min(1.0, entitiesInChunk.length / 20.0); // Current chunk density
+
+        // Count entities in adjacent chunks
+        const adjacentChunks = [
+            {x: chunkX - 1, z: chunkZ}, {x: chunkX + 1, z: chunkZ},
+            {x: chunkX, z: chunkZ - 1}, {x: chunkX, z: chunkZ + 1}
+        ];
+
+        let totalAdjacent = 0;
+        adjacentChunks.forEach(chunk => {
+            const count = entities.filter(e => {
+                if (!e.position) return false;
+                const eChunkX = Math.floor(e.position.x / 16);
+                const eChunkZ = Math.floor(e.position.z / 16);
+                return eChunkX === chunk.x && eChunkZ === chunk.z;
+            }).length;
+            totalAdjacent += count;
+        });
+
+        state[offset++] = Math.min(1.0, totalAdjacent / 40.0); // Adjacent chunk density
+        state[offset++] = totalAdjacent > 30 ? 1.0 : 0.0; // High density area
+        state[offset++] = entitiesInChunk.length < 3 ? 1.0 : 0.0; // Low density (peaceful)
+
+        // Feature 11-13: Chunk loading state
+        // Check if surrounding chunks appear loaded by testing block access
+        let loadedChunks = 0;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+                const testX = (chunkX + dx) * 16 + 8;
+                const testZ = (chunkZ + dz) * 16 + 8;
+                const testBlock = bot.blockAt(new Vec3(testX, pos.y, testZ));
+                if (testBlock) loadedChunks++;
+            }
+        }
+
+        state[offset++] = loadedChunks / 9.0; // Loaded chunk ratio
+        state[offset++] = loadedChunks === 9 ? 1.0 : 0.0; // All chunks loaded
+        state[offset++] = loadedChunks < 5 ? 1.0 : 0.0; // Chunk loading issues
+
+        // Feature 14-16: Slime chunk detection (simplified)
+        const slimeChunk = this.isSlimeChunk(chunkX, chunkZ);
+        state[offset++] = slimeChunk ? 1.0 : 0.0;
+        state[offset++] = slimeChunk && pos.y < 40 ? 1.0 : 0.0; // Slime spawn possible
+
+        const slimes = entities.filter(e => e.name === 'slime');
+        state[offset++] = slimes.length > 0 ? 1.0 : 0.0; // Slimes present
+
+        // Feature 17-19: Spawn chunk detection (within 128 blocks of world spawn)
+        const distToSpawn = Math.sqrt(pos.x ** 2 + pos.z ** 2);
+        const isSpawnChunk = distToSpawn < 128;
+        state[offset++] = isSpawnChunk ? 1.0 : 0.0;
+        state[offset++] = Math.max(0, 1.0 - distToSpawn / 1000.0); // Proximity to spawn
+        state[offset++] = distToSpawn / 1000.0; // Distance from spawn (normalized)
+
+        // Feature 20-22: Biome boundaries (simplified detection)
+        const currentBiome = bot.blockAt(pos)?.biome;
+        const testPoints = [
+            pos.offset(16, 0, 0), pos.offset(-16, 0, 0),
+            pos.offset(0, 0, 16), pos.offset(0, 0, -16)
+        ];
+
+        let biomeBoundary = false;
+        testPoints.forEach(testPos => {
+            const testBlock = bot.blockAt(testPos);
+            if (testBlock?.biome && testBlock.biome.id !== currentBiome?.id) {
+                biomeBoundary = true;
+            }
+        });
+
+        state[offset++] = biomeBoundary ? 1.0 : 0.0; // Near biome boundary
+        state[offset++] = currentBiome ? currentBiome.temperature : 0.5; // Biome temperature
+        state[offset++] = currentBiome ? currentBiome.rainfall : 0.5; // Biome rainfall
+
+        // Feature 23-25: Chunk optimization hints
+        const shouldExploreNewChunk = entitiesInChunk.length < 5 && !nearBoundary;
+        const shouldAvoidChunk = totalAdjacent > 40; // Too crowded
+        const isPrimeChunk = loadedChunks === 9 && !nearBoundary; // Good for building
+
+        state[offset++] = shouldExploreNewChunk ? 1.0 : 0.0;
+        state[offset++] = shouldAvoidChunk ? 1.0 : 0.0;
+        state[offset++] = isPrimeChunk ? 1.0 : 0.0;
+
+        return offset;
+    }
+
+    /**
+     * Encode villager economy (35 dimensions)
+     * Villager trades, prices, availability, optimization
+     */
+    encodeVillagerEconomy(bot, state, offset) {
+        const nearbyVillagers = Object.values(bot.entities).filter(e =>
+            e.name === 'villager' &&
+            e.position &&
+            e.position.distanceTo(bot.entity.position) < 32
+        ).slice(0, 5); // Consider up to 5 nearest villagers
+
+        // Feature 1: Villager count
+        state[offset++] = Math.min(1.0, nearbyVillagers.length / 5.0);
+
+        // Feature 2-6: Villager distances (5 closest)
+        for (let i = 0; i < 5; i++) {
+            if (i < nearbyVillagers.length) {
+                const dist = nearbyVillagers[i].position.distanceTo(bot.entity.position);
+                state[offset++] = 1.0 - Math.min(1.0, dist / 32.0);
+            } else {
+                state[offset++] = 0;
+            }
+        }
+
+        // Feature 7-11: Villager profession detection (simplified by metadata if available)
+        // Note: Full profession detection requires villager trading window
+        // We'll use proximity and inventory hints
+        const professionHints = {
+            hasEmeralds: bot.inventory.items().some(i => i.name === 'emerald'),
+            hasBooks: bot.inventory.items().some(i => i.name === 'book'),
+            hasFarmItems: bot.inventory.items().some(i => ['wheat', 'carrot', 'potato'].includes(i.name)),
+            hasOres: bot.inventory.items().some(i => i.name.includes('ore')),
+            hasTools: bot.inventory.items().some(i => i.name.includes('pickaxe') || i.name.includes('axe'))
+        };
+
+        state[offset++] = professionHints.hasEmeralds ? 1.0 : 0.0; // Can trade
+        state[offset++] = professionHints.hasBooks ? 1.0 : 0.0; // Librarian nearby (hint)
+        state[offset++] = professionHints.hasFarmItems ? 1.0 : 0.0; // Farmer nearby (hint)
+        state[offset++] = professionHints.hasOres ? 1.0 : 0.0; // Weaponsmith/Toolsmith (hint)
+        state[offset++] = professionHints.hasTools ? 1.0 : 0.0; // Toolsmith (hint)
+
+        // Feature 12-16: Emerald economy
+        const emeraldCount = bot.inventory.items()
+            .filter(i => i.name === 'emerald')
+            .reduce((sum, i) => sum + i.count, 0);
+
+        state[offset++] = Math.min(1.0, emeraldCount / 64.0); // Emerald count
+        state[offset++] = emeraldCount > 0 ? 1.0 : 0.0; // Has emeralds
+        state[offset++] = emeraldCount > 10 ? 1.0 : 0.0; // Rich in emeralds
+        state[offset++] = emeraldCount < 3 ? 1.0 : 0.0; // Needs emeralds
+
+        // Emerald-generating items
+        const canGetEmeralds = bot.inventory.items().some(i =>
+            ['wheat', 'carrot', 'potato', 'paper', 'stick', 'coal'].includes(i.name)
+        );
+        state[offset++] = canGetEmeralds ? 1.0 : 0.0;
+
+        // Feature 17-21: Trading hall infrastructure
+        const nearbyJobSites = ['lectern', 'composter', 'blast_furnace', 'smithing_table', 'grindstone']
+            .map(blockName => {
+                const block = bot.findBlock({
+                    matching: b => b.name === blockName,
+                    maxDistance: 16
+                });
+                return block ? 1 : 0;
+            });
+
+        nearbyJobSites.forEach(has => state[offset++] = has);
+
+        // Feature 22: Village proximity (multiple villagers = village)
+        const isInVillage = nearbyVillagers.length >= 3;
+        state[offset++] = isInVillage ? 1.0 : 0.0;
+
+        // Feature 23-25: Iron golem presence (village protection)
+        const ironGolems = Object.values(bot.entities).filter(e =>
+            e.name === 'iron_golem' &&
+            e.position &&
+            e.position.distanceTo(bot.entity.position) < 32
+        );
+        state[offset++] = ironGolems.length > 0 ? 1.0 : 0.0; // Village protected
+        state[offset++] = Math.min(1.0, ironGolems.length / 3.0); // Golem count
+        state[offset++] = isInVillage && ironGolems.length > 0 ? 1.0 : 0.0; // Safe village
+
+        // Feature 26-28: Zombie villager conversion opportunity
+        const zombieVillagers = Object.values(bot.entities).filter(e =>
+            e.name === 'zombie_villager' &&
+            e.position &&
+            e.position.distanceTo(bot.entity.position) < 16
+        );
+        const hasGoldenApple = bot.inventory.items().some(i => i.name === 'golden_apple');
+        const hasWeaknessPotion = bot.inventory.items().some(i =>
+            i.name && i.name.includes('potion') && i.name.includes('weakness')
+        );
+
+        state[offset++] = zombieVillagers.length > 0 ? 1.0 : 0.0; // Zombie villager nearby
+        state[offset++] = hasGoldenApple ? 1.0 : 0.0; // Has golden apple
+        state[offset++] = hasWeaknessPotion ? 1.0 : 0.0; // Has weakness potion
+
+        // Feature 29-31: Trading optimization
+        const canCureVillager = zombieVillagers.length > 0 && hasGoldenApple && hasWeaknessPotion;
+        const hasTradeGoods = bot.inventory.items().some(i =>
+            ['paper', 'book', 'wheat', 'carrot', 'potato', 'coal', 'iron_ingot'].includes(i.name)
+        );
+        const readyToTrade = nearbyVillagers.length > 0 && (emeraldCount > 0 || hasTradeGoods);
+
+        state[offset++] = canCureVillager ? 1.0 : 0.0; // Can cure for discounts
+        state[offset++] = hasTradeGoods ? 1.0 : 0.0; // Has items to sell
+        state[offset++] = readyToTrade ? 1.0 : 0.0; // Ready to trade
+
+        // Feature 32-35: Village bells and beds (village center indicators)
+        const bell = bot.findBlock({
+            matching: b => b.name === 'bell',
+            maxDistance: 32
+        });
+        const beds = bot.findBlocks({
+            matching: b => b.name && b.name.includes('bed'),
+            maxDistance: 32,
+            count: 10
+        });
+
+        state[offset++] = bell ? 1.0 : 0.0; // Village center nearby
+        state[offset++] = Math.min(1.0, beds.length / 10.0); // Bed count (village size)
+        state[offset++] = beds.length >= nearbyVillagers.length ? 1.0 : 0.0; // Beds sufficient
+        state[offset++] = nearbyVillagers.length > beds.length ? 1.0 : 0.0; // Need more beds
+
+        return offset;
+    }
+
+    /**
+     * Encode structure proximity (40 dimensions)
+     * Distance to villages, strongholds, temples, etc.
+     */
+    encodeStructureProximity(bot, state, offset) {
+        const pos = bot.entity.position;
+
+        // Feature 1-8: Village indicators (villagers, bells, job sites)
+        const villagers = Object.values(bot.entities).filter(e =>
+            e.name === 'villager' &&
+            e.position &&
+            e.position.distanceTo(pos) < 64
+        );
+        state[offset++] = Math.min(1.0, villagers.length / 10.0); // Villager density
+        state[offset++] = villagers.length >= 3 ? 1.0 : 0.0; // Is village
+
+        const bell = bot.findBlock({
+            matching: b => b.name === 'bell',
+            maxDistance: 64
+        });
+        if (bell) {
+            const distToBell = bell.position.distanceTo(pos);
+            state[offset++] = 1.0 - Math.min(1.0, distToBell / 64.0); // Bell proximity
+            state[offset++] = 1.0; // Has bell
+        } else {
+            state[offset++] = 0;
+            state[offset++] = 0;
+        }
+
+        const jobSites = bot.findBlocks({
+            matching: b => ['lectern', 'composter', 'blast_furnace', 'smithing_table'].includes(b.name),
+            maxDistance: 32,
+            count: 10
+        });
+        state[offset++] = Math.min(1.0, jobSites.length / 10.0); // Job site density
+        state[offset++] = jobSites.length > 5 ? 1.0 : 0.0; // Developed village
+
+        const wells = bot.findBlocks({
+            matching: b => b.name === 'cobblestone' || b.name === 'water',
+            maxDistance: 32,
+            count: 20
+        });
+        state[offset++] = wells.length > 15 ? 1.0 : 0.0; // Village well (heuristic)
+        state[offset++] = villagers.length > 0 && jobSites.length > 3 ? 1.0 : 0.0; // Active village
+
+        // Feature 9-13: Desert temple indicators
+        const sandstone = bot.findBlocks({
+            matching: b => b.name && b.name.includes('sandstone'),
+            maxDistance: 32,
+            count: 50
+        });
+        const hasPressurePlate = bot.findBlock({
+            matching: b => b.name && b.name.includes('pressure_plate'),
+            maxDistance: 16
+        });
+        const hasTNT = bot.findBlock({
+            matching: b => b.name === 'tnt',
+            maxDistance: 16
+        });
+
+        state[offset++] = sandstone.length > 30 ? 1.0 : 0.0; // Sandstone structure
+        state[offset++] = hasPressurePlate ? 1.0 : 0.0; // Trap indicator
+        state[offset++] = hasTNT ? 1.0 : 0.0; // Temple trap
+        state[offset++] = (sandstone.length > 30 && hasTNT) ? 1.0 : 0.0; // Likely desert temple
+        state[offset++] = Math.min(1.0, sandstone.length / 50.0); // Sandstone density
+
+        // Feature 14-18: Jungle temple indicators
+        const mossy = bot.findBlocks({
+            matching: b => b.name && b.name.includes('mossy'),
+            maxDistance: 32,
+            count: 30
+        });
+        const vines = bot.findBlocks({
+            matching: b => b.name === 'vine',
+            maxDistance: 32,
+            count: 20
+        });
+        const dispensers = bot.findBlocks({
+            matching: b => b.name === 'dispenser',
+            maxDistance: 16,
+            count: 5
+        });
+
+        state[offset++] = mossy.length > 20 ? 1.0 : 0.0; // Mossy cobblestone
+        state[offset++] = vines.length > 10 ? 1.0 : 0.0; // Jungle vines
+        state[offset++] = dispensers.length > 0 ? 1.0 : 0.0; // Temple traps
+        state[offset++] = (mossy.length > 20 && dispensers.length > 0) ? 1.0 : 0.0; // Likely jungle temple
+        state[offset++] = Math.min(1.0, mossy.length / 30.0); // Mossy density
+
+        // Feature 19-23: Ocean monument indicators
+        const prismarine = bot.findBlocks({
+            matching: b => b.name && b.name.includes('prismarine'),
+            maxDistance: 32,
+            count: 50
+        });
+        const sponge = bot.findBlock({
+            matching: b => b.name === 'sponge' || b.name === 'wet_sponge',
+            maxDistance: 32
+        });
+        const guardians = Object.values(bot.entities).filter(e =>
+            e.name && e.name.includes('guardian') &&
+            e.position &&
+            e.position.distanceTo(pos) < 32
+        );
+
+        state[offset++] = prismarine.length > 30 ? 1.0 : 0.0; // Prismarine structure
+        state[offset++] = sponge ? 1.0 : 0.0; // Sponge room
+        state[offset++] = guardians.length > 0 ? 1.0 : 0.0; // Guardian presence
+        state[offset++] = (prismarine.length > 30 && guardians.length > 0) ? 1.0 : 0.0; // Ocean monument
+        state[offset++] = Math.min(1.0, prismarine.length / 50.0); // Prismarine density
+
+        // Feature 24-28: Stronghold indicators (rare)
+        const stoneBricks = bot.findBlocks({
+            matching: b => b.name && b.name.includes('stone_brick'),
+            maxDistance: 32,
+            count: 40
+        });
+        const ironDoors = bot.findBlocks({
+            matching: b => b.name === 'iron_door',
+            maxDistance: 16,
+            count: 5
+        });
+        const endPortalFrames = bot.findBlocks({
+            matching: b => b.name === 'end_portal_frame',
+            maxDistance: 32,
+            count: 12
+        });
+
+        state[offset++] = stoneBricks.length > 30 ? 1.0 : 0.0; // Stone brick structure
+        state[offset++] = ironDoors.length > 0 ? 1.0 : 0.0; // Iron doors
+        state[offset++] = endPortalFrames.length > 0 ? 1.0 : 0.0; // Portal frames
+        state[offset++] = endPortalFrames.length >= 12 ? 1.0 : 0.0; // Complete portal
+        state[offset++] = (stoneBricks.length > 30 && endPortalFrames.length > 0) ? 1.0 : 0.0; // Stronghold
+
+        // Feature 29-33: Mineshaft indicators
+        const rails = bot.findBlocks({
+            matching: b => b.name && b.name.includes('rail'),
+            maxDistance: 16,
+            count: 10
+        });
+        const oakFence = bot.findBlocks({
+            matching: b => b.name === 'oak_fence',
+            maxDistance: 16,
+            count: 10
+        });
+        const caveSpiders = Object.values(bot.entities).filter(e =>
+            e.name === 'cave_spider' &&
+            e.position &&
+            e.position.distanceTo(pos) < 16
+        );
+
+        state[offset++] = rails.length > 5 ? 1.0 : 0.0; // Rails present
+        state[offset++] = oakFence.length > 5 ? 1.0 : 0.0; // Mineshaft supports
+        state[offset++] = caveSpiders.length > 0 ? 1.0 : 0.0; // Cave spiders
+        state[offset++] = (rails.length > 5 && oakFence.length > 5) ? 1.0 : 0.0; // Mineshaft
+        state[offset++] = Math.min(1.0, rails.length / 10.0); // Rail density
+
+        // Feature 34-37: Nether fortress indicators
+        const netherBricks = bot.findBlocks({
+            matching: b => b.name && b.name.includes('nether_brick'),
+            maxDistance: 32,
+            count: 30
+        });
+        const blazes = Object.values(bot.entities).filter(e =>
+            e.name === 'blaze' &&
+            e.position &&
+            e.position.distanceTo(pos) < 32
+        );
+        const netherWart = bot.findBlock({
+            matching: b => b.name === 'nether_wart',
+            maxDistance: 16
+        });
+
+        state[offset++] = netherBricks.length > 20 ? 1.0 : 0.0; // Nether brick structure
+        state[offset++] = blazes.length > 0 ? 1.0 : 0.0; // Blaze spawner
+        state[offset++] = netherWart ? 1.0 : 0.0; // Nether wart farm
+        state[offset++] = (netherBricks.length > 20 && blazes.length > 0) ? 1.0 : 0.0; // Nether fortress
+
+        // Feature 38-40: End city indicators
+        const purpur = bot.findBlocks({
+            matching: b => b.name && b.name.includes('purpur'),
+            maxDistance: 32,
+            count: 30
+        });
+        const shulkers = Object.values(bot.entities).filter(e =>
+            e.name === 'shulker' &&
+            e.position &&
+            e.position.distanceTo(pos) < 32
+        );
+        const endRods = bot.findBlocks({
+            matching: b => b.name === 'end_rod',
+            maxDistance: 16,
+            count: 5
+        });
+
+        state[offset++] = purpur.length > 20 ? 1.0 : 0.0; // Purpur structure
+        state[offset++] = shulkers.length > 0 ? 1.0 : 0.0; // Shulker presence
+        state[offset++] = (purpur.length > 20 && endRods.length > 0) ? 1.0 : 0.0; // End city
+
+        return offset;
+    }
+
+    /**
+     * Encode advanced combat (50 dimensions)
+     * Weapon cooldowns, mob weaknesses, combat tactics
+     */
+    encodeAdvancedCombat(bot, state, offset) {
+        // Feature 1-5: Weapon status
+        const heldItem = bot.heldItem;
+        const isSword = heldItem && heldItem.name.includes('sword');
+        const isAxe = heldItem && heldItem.name.includes('axe');
+        const isBow = heldItem && heldItem.name === 'bow';
+        const isCrossbow = heldItem && heldItem.name === 'crossbow';
+        const isTrident = heldItem && heldItem.name === 'trident';
+
+        state[offset++] = isSword ? 1.0 : 0.0;
+        state[offset++] = isAxe ? 1.0 : 0.0;
+        state[offset++] = isBow ? 1.0 : 0.0;
+        state[offset++] = isCrossbow ? 1.0 : 0.0;
+        state[offset++] = isTrident ? 1.0 : 0.0;
+
+        // Feature 6: Attack cooldown progress (0-1, 1 = ready to attack)
+        // Note: mineflayer doesn't expose this directly, estimate based on weapon type
+        // Sword: 0.625s, Axe: 1.0-1.6s depending on tier
+        const attackCooldown = 1.0; // Assume ready (would need custom tracking)
+        state[offset++] = attackCooldown;
+
+        // Feature 7-11: Weapon tier and damage
+        const weaponTier = heldItem ? (
+            heldItem.name.includes('diamond') ? 1.0 :
+            heldItem.name.includes('iron') ? 0.75 :
+            heldItem.name.includes('stone') ? 0.5 :
+            heldItem.name.includes('wooden') ? 0.25 : 0
+        ) : 0;
+        state[offset++] = weaponTier;
+
+        const estimatedDamage = isSword ? (weaponTier * 7 + 3) / 10.0 : // Diamond sword = 7 damage
+                                isAxe ? (weaponTier * 9 + 3) / 12.0 : 0; // Diamond axe = 9 damage
+        state[offset++] = estimatedDamage;
+
+        const hasSweepingEdge = heldItem && heldItem.enchants &&
+            heldItem.enchants.some(e => e.name === 'sweeping_edge');
+        state[offset++] = hasSweepingEdge ? 1.0 : 0.0;
+
+        const sharpnessLevel = heldItem && heldItem.enchants ?
+            (heldItem.enchants.find(e => e.name === 'sharpness')?.lvl || 0) / 5.0 : 0;
+        state[offset++] = sharpnessLevel;
+
+        const knockbackLevel = heldItem && heldItem.enchants ?
+            (heldItem.enchants.find(e => e.name === 'knockback')?.lvl || 0) / 2.0 : 0;
+        state[offset++] = knockbackLevel;
+
+        // Feature 12-16: Shield and defense
+        const offHand = bot.inventory.slots[45];
+        const hasShield = offHand && offHand.name === 'shield';
+        state[offset++] = hasShield ? 1.0 : 0.0;
+        state[offset++] = 0; // Shield blocking state (would need tracking)
+        state[offset++] = hasShield ? 1.0 : 0.0; // Can block
+
+        const armor = [
+            bot.inventory.slots[5], // Helmet
+            bot.inventory.slots[6], // Chestplate
+            bot.inventory.slots[7], // Leggings
+            bot.inventory.slots[8]  // Boots
+        ];
+        const armorCount = armor.filter(a => a !== null).length;
+        state[offset++] = armorCount / 4.0; // Armor completeness
+
+        const armorTier = armor.map(a =>
+            a && a.name.includes('diamond') ? 1.0 :
+            a && a.name.includes('iron') ? 0.75 :
+            a && a.name.includes('chain') ? 0.5 :
+            a && a.name.includes('leather') ? 0.25 : 0
+        ).reduce((sum, val) => sum + val, 0) / 4.0;
+        state[offset++] = armorTier;
+
+        // Feature 17-21: Ranged combat
+        const arrows = bot.inventory.items().filter(i => i.name === 'arrow')
+            .reduce((sum, i) => sum + i.count, 0);
+        state[offset++] = Math.min(1.0, arrows / 64.0); // Arrow count
+        state[offset++] = arrows > 0 ? 1.0 : 0.0; // Has arrows
+        state[offset++] = (isBow || isCrossbow) && arrows > 0 ? 1.0 : 0.0; // Ranged ready
+
+        const powerLevel = isBow && heldItem.enchants ?
+            (heldItem.enchants.find(e => e.name === 'power')?.lvl || 0) / 5.0 : 0;
+        const punchLevel = isBow && heldItem.enchants ?
+            (heldItem.enchants.find(e => e.name === 'punch')?.lvl || 0) / 2.0 : 0;
+        state[offset++] = powerLevel;
+        state[offset++] = punchLevel;
+
+        // Feature 22-31: Mob-specific combat tactics (10 common hostile mobs)
+        const nearbyMobs = Object.values(bot.entities).filter(e =>
+            e.position &&
+            e.position.distanceTo(bot.entity.position) < 16
+        );
+
+        const mobTypes = ['zombie', 'skeleton', 'spider', 'creeper', 'enderman',
+                          'witch', 'zombie_pigman', 'blaze', 'ghast', 'wither_skeleton'];
+
+        mobTypes.forEach(mobType => {
+            const mob = nearbyMobs.find(e => e.name === mobType);
+            if (mob) {
+                const dist = mob.position.distanceTo(bot.entity.position);
+                state[offset++] = 1.0 - Math.min(1.0, dist / 16.0); // Threat level by proximity
+            } else {
+                state[offset++] = 0;
+            }
+        });
+
+        // Feature 32-36: Combat situation assessment
+        const hostileCount = nearbyMobs.filter(e =>
+            mobTypes.includes(e.name)
+        ).length;
+        state[offset++] = Math.min(1.0, hostileCount / 5.0); // Threat count
+
+        const immediateThreats = nearbyMobs.filter(e =>
+            mobTypes.includes(e.name) &&
+            e.position.distanceTo(bot.entity.position) < 3
+        ).length;
+        state[offset++] = Math.min(1.0, immediateThreats / 2.0); // Immediate danger
+
+        const isOutnumbered = hostileCount > 3;
+        state[offset++] = isOutnumbered ? 1.0 : 0.0;
+
+        const canRetreat = bot.entity.onGround && !bot.entity.isInWater;
+        state[offset++] = canRetreat ? 1.0 : 0.0;
+
+        const shouldFlee = (hostileCount > 3 && bot.health < 10) ||
+                          (immediateThreats > 1 && bot.health < 15);
+        state[offset++] = shouldFlee ? 1.0 : 0.0;
+
+        // Feature 37-41: Combat resources
+        const hasFood = bot.inventory.items().some(i =>
+            ['beef', 'pork', 'chicken', 'bread'].some(f => i.name.includes(f))
+        );
+        const hasPotions = bot.inventory.items().some(i => i.name.includes('potion'));
+        const hasGoldenApple = bot.inventory.items().some(i => i.name === 'golden_apple');
+        const hasTotem = bot.inventory.items().some(i => i.name === 'totem_of_undying');
+        const hasEnderPearl = bot.inventory.items().some(i => i.name === 'ender_pearl');
+
+        state[offset++] = hasFood ? 1.0 : 0.0; // Can heal
+        state[offset++] = hasPotions ? 1.0 : 0.0; // Has buffs
+        state[offset++] = hasGoldenApple ? 1.0 : 0.0; // Emergency heal
+        state[offset++] = hasTotem ? 1.0 : 0.0; // Death protection
+        state[offset++] = hasEnderPearl ? 1.0 : 0.0; // Can escape
+
+        // Feature 42-46: Combat environment
+        const hasHighGround = nearbyMobs.every(e =>
+            e.position.y < bot.entity.position.y - 1
+        );
+        state[offset++] = hasHighGround && hostileCount > 0 ? 1.0 : 0.0;
+
+        const inWater = bot.entity.isInWater;
+        const inLava = bot.entity.isInLava;
+        state[offset++] = inWater ? 1.0 : 0.0; // Slower combat
+        state[offset++] = inLava ? 1.0 : 0.0; // Environmental damage
+
+        const hasFireResist = bot.entity.effects && Object.values(bot.entity.effects).some(e => e.id === 12);
+        state[offset++] = hasFireResist ? 1.0 : 0.0;
+
+        const lightLevel = bot.blockAt(bot.entity.position)?.light || 15;
+        const lowVisibility = lightLevel < 7;
+        state[offset++] = lowVisibility ? 1.0 : 0.0; // Hard to see enemies
+
+        // Feature 47-50: Combat tactics
+        const canCriticalHit = bot.entity.velocity && bot.entity.velocity.y < -0.1; // Falling
+        const inCombatRange = immediateThreats > 0;
+        const shouldKite = (isBow || isCrossbow) && arrows > 10 && hostileCount > 0;
+        const shouldMelee = (isSword || isAxe) && immediateThreats > 0;
+
+        state[offset++] = canCriticalHit ? 1.0 : 0.0;
+        state[offset++] = inCombatRange ? 1.0 : 0.0;
+        state[offset++] = shouldKite ? 1.0 : 0.0;
+        state[offset++] = shouldMelee ? 1.0 : 0.0;
+
+        return offset;
+    }
+
+    /**
+     * Encode world time (15 dimensions)
+     * Time-based opportunities (mining, mob farming, farming)
+     */
+    encodeWorldTime(bot, state, offset) {
+        const timeOfDay = bot.time.timeOfDay % 24000;
+        const age = bot.time.age || 0;
+
+        // Feature 1: Raw time (normalized 0-1)
+        state[offset++] = timeOfDay / 24000.0;
+
+        // Feature 2-6: Time periods (one-hot style)
+        const isMorning = timeOfDay >= 0 && timeOfDay < 6000;
+        const isNoon = timeOfDay >= 6000 && timeOfDay < 12000;
+        const isEvening = timeOfDay >= 12000 && timeOfDay < 13000;
+        const isNight = timeOfDay >= 13000 && timeOfDay < 23000;
+        const isMidnight = timeOfDay >= 23000 || timeOfDay < 1000;
+
+        state[offset++] = isMorning ? 1.0 : 0.0;
+        state[offset++] = isNoon ? 1.0 : 0.0;
+        state[offset++] = isEvening ? 1.0 : 0.0;
+        state[offset++] = isNight ? 1.0 : 0.0;
+        state[offset++] = isMidnight ? 1.0 : 0.0;
+
+        // Feature 7-8: Daylight indicators
+        const isDaytime = timeOfDay < 13000;
+        const isNighttime = !isDaytime;
+        state[offset++] = isDaytime ? 1.0 : 0.0;
+        state[offset++] = isNighttime ? 1.0 : 0.0;
+
+        // Feature 9: Time until sunrise/sunset
+        let timeUntilChange;
+        if (isDaytime) {
+            timeUntilChange = 13000 - timeOfDay; // Time until sunset
+        } else {
+            timeUntilChange = 24000 - timeOfDay; // Time until sunrise
+        }
+        state[offset++] = timeUntilChange / 12000.0; // Normalized
+
+        // Feature 10-12: Mob spawn timing
+        const mobsCanSpawn = timeOfDay >= 13000 && timeOfDay < 23000;
+        const mobSpawnPeak = timeOfDay >= 18000 && timeOfDay < 20000; // Peak spawn
+        const undeadBurn = isDaytime; // Zombies/skeletons burn
+
+        state[offset++] = mobsCanSpawn ? 1.0 : 0.0;
+        state[offset++] = mobSpawnPeak ? 1.0 : 0.0;
+        state[offset++] = undeadBurn ? 1.0 : 0.0;
+
+        // Feature 13: Villager activity (villagers work 0-9000, sleep 12000-0)
+        const villagersActive = timeOfDay >= 0 && timeOfDay < 9000;
+        state[offset++] = villagersActive ? 1.0 : 0.0;
+
+        // Feature 14: Bed sleep availability (can sleep 12541+)
+        const canSleep = timeOfDay >= 12541;
+        state[offset++] = canSleep ? 1.0 : 0.0;
+
+        // Feature 15: World age (days passed)
+        const daysPassed = Math.floor(age / 24000);
+        state[offset++] = Math.min(1.0, daysPassed / 100.0); // Normalized to 100 days
+
+        return offset;
+    }
+
+    /**
+     * Encode terrain analysis (49 dimensions)
+     * Biome features, elevation, cave detection, resource distribution
+     */
+    encodeTerrainAnalysis(bot, state, offset) {
+        const pos = bot.entity.position;
+
+        // Feature 1-3: Current position (normalized)
+        state[offset++] = pos.x / 1000.0; // Normalize to ±1000 blocks
+        state[offset++] = pos.y / 256.0; // Y-level
+        state[offset++] = pos.z / 1000.0;
+
+        // Feature 4-8: Elevation analysis
+        const yLevel = pos.y;
+        state[offset++] = yLevel / 256.0; // Absolute Y
+        state[offset++] = yLevel < 0 ? 1.0 : 0.0; // Below sea level
+        state[offset++] = yLevel < -32 ? 1.0 : 0.0; // Deepslate layer
+        state[offset++] = yLevel > 64 ? 1.0 : 0.0; // Surface level
+        state[offset++] = yLevel > 128 ? 1.0 : 0.0; // Mountains
+
+        // Feature 9-13: Biome features
+        const block = bot.blockAt(pos);
+        const biome = block?.biome;
+
+        state[offset++] = biome?.temperature || 0.5; // Temperature
+        state[offset++] = biome?.rainfall || 0.5; // Rainfall
+
+        const isCold = biome && biome.temperature < 0.3;
+        const isTemperate = biome && biome.temperature >= 0.3 && biome.temperature <= 0.7;
+        const isHot = biome && biome.temperature > 0.7;
+
+        state[offset++] = isCold ? 1.0 : 0.0;
+        state[offset++] = isTemperate ? 1.0 : 0.0;
+        state[offset++] = isHot ? 1.0 : 0.0;
+
+        // Feature 14-18: Cave/underground detection
+        const blocksAbove = [];
+        for (let y = 1; y <= 10; y++) {
+            const blockAbove = bot.blockAt(pos.offset(0, y, 0));
+            if (blockAbove && blockAbove.name !== 'air') {
+                blocksAbove.push(blockAbove);
+            }
+        }
+
+        const isUnderground = blocksAbove.length >= 5;
+        const inCave = isUnderground && yLevel < 64;
+        const inDeepCave = inCave && yLevel < 0;
+        const solidBlocksAbove = blocksAbove.length;
+
+        state[offset++] = isUnderground ? 1.0 : 0.0;
+        state[offset++] = inCave ? 1.0 : 0.0;
+        state[offset++] = inDeepCave ? 1.0 : 0.0;
+        state[offset++] = solidBlocksAbove / 10.0;
+        state[offset++] = solidBlocksAbove === 10 ? 1.0 : 0.0; // Completely enclosed
+
+        // Feature 19-23: Nearby ore detection
+        const nearbyBlocks = [];
+        for (let y = -3; y <= 3; y++) {
+            for (let x = -3; x <= 3; x++) {
+                for (let z = -3; z <= 3; z++) {
+                    const block = bot.blockAt(pos.offset(x, y, z));
+                    if (block) nearbyBlocks.push(block.name);
+                }
+            }
+        }
+
+        const hasCoal = nearbyBlocks.some(b => b.includes('coal_ore'));
+        const hasIron = nearbyBlocks.some(b => b.includes('iron_ore'));
+        const hasGold = nearbyBlocks.some(b => b.includes('gold_ore'));
+        const hasDiamond = nearbyBlocks.some(b => b.includes('diamond_ore'));
+        const hasLapis = nearbyBlocks.some(b => b.includes('lapis_ore'));
+
+        state[offset++] = hasCoal ? 1.0 : 0.0;
+        state[offset++] = hasIron ? 1.0 : 0.0;
+        state[offset++] = hasGold ? 1.0 : 0.0;
+        state[offset++] = hasDiamond ? 1.0 : 0.0;
+        state[offset++] = hasLapis ? 1.0 : 0.0;
+
+        // Feature 24-28: Terrain type
+        const hasStone = nearbyBlocks.filter(b => b === 'stone' || b === 'deepslate').length;
+        const hasDirt = nearbyBlocks.filter(b => b === 'dirt' || b === 'grass_block').length;
+        const hasSand = nearbyBlocks.filter(b => b === 'sand').length;
+        const hasWater = nearbyBlocks.filter(b => b === 'water').length;
+        const hasLava = nearbyBlocks.filter(b => b === 'lava').length;
+
+        state[offset++] = Math.min(1.0, hasStone / 50.0); // Stone density
+        state[offset++] = Math.min(1.0, hasDirt / 30.0); // Dirt density
+        state[offset++] = Math.min(1.0, hasSand / 20.0); // Sand density
+        state[offset++] = Math.min(1.0, hasWater / 15.0); // Water density
+        state[offset++] = Math.min(1.0, hasLava / 5.0); // Lava density
+
+        // Feature 29-33: Surface features
+        const hasTrees = nearbyBlocks.some(b => b.includes('log'));
+        const hasGrass = nearbyBlocks.some(b => b === 'grass_block');
+        const hasFlowers = nearbyBlocks.some(b => b.includes('flower') || b.includes('tulip'));
+        const hasMushrooms = nearbyBlocks.some(b => b.includes('mushroom'));
+        const hasSugarCane = nearbyBlocks.some(b => b === 'sugar_cane');
+
+        state[offset++] = hasTrees ? 1.0 : 0.0;
+        state[offset++] = hasGrass ? 1.0 : 0.0;
+        state[offset++] = hasFlowers ? 1.0 : 0.0;
+        state[offset++] = hasMushrooms ? 1.0 : 0.0;
+        state[offset++] = hasSugarCane ? 1.0 : 0.0;
+
+        // Feature 34-38: Hazards
+        const nearLava = hasLava > 0;
+        const nearWater = hasWater > 0;
+        const nearVoid = yLevel < 5; // Close to bedrock/void
+        const nearFall = this.checkNearbyCliff(bot);
+        const inDanger = nearLava || (nearVoid && !bot.entity.onGround);
+
+        state[offset++] = nearLava ? 1.0 : 0.0;
+        state[offset++] = nearWater ? 1.0 : 0.0;
+        state[offset++] = nearVoid ? 1.0 : 0.0;
+        state[offset++] = nearFall ? 1.0 : 0.0;
+        state[offset++] = inDanger ? 1.0 : 0.0;
+
+        // Feature 39-43: Resource accessibility
+        const hasPickaxe = bot.inventory.items().some(i => i.name.includes('pickaxe'));
+        const hasAxe = bot.inventory.items().some(i => i.name.includes('axe'));
+        const hasShovel = bot.inventory.items().some(i => i.name.includes('shovel'));
+
+        const canMine = hasPickaxe && hasStone > 10;
+        const canChopTrees = hasAxe && hasTrees;
+        const canDig = hasShovel && (hasDirt > 10 || hasSand > 10);
+        const hasResources = hasCoal || hasIron || hasTrees;
+
+        state[offset++] = canMine ? 1.0 : 0.0;
+        state[offset++] = canChopTrees ? 1.0 : 0.0;
+        state[offset++] = canDig ? 1.0 : 0.0;
+        state[offset++] = hasResources ? 1.0 : 0.0;
+        state[offset++] = (hasPickaxe && hasAxe && hasShovel) ? 1.0 : 0.0; // Full toolset
+
+        // Feature 44-49: Strategic terrain features
+        const flatTerrain = hasDirt > 20 && hasStone < 5;
+        const openArea = !isUnderground && blocksAbove.length < 2;
+        const goodForBuilding = flatTerrain && openArea;
+        const goodForMining = hasStone > 30 && (hasCoal || hasIron);
+        const goodForFarming = flatTerrain && nearWater && !inCave;
+        const explorationValue = !isUnderground && hasTrees && hasWater;
+
+        state[offset++] = flatTerrain ? 1.0 : 0.0;
+        state[offset++] = openArea ? 1.0 : 0.0;
+        state[offset++] = goodForBuilding ? 1.0 : 0.0;
+        state[offset++] = goodForMining ? 1.0 : 0.0;
+        state[offset++] = goodForFarming ? 1.0 : 0.0;
+        state[offset++] = explorationValue ? 1.0 : 0.0;
+
+        return offset;
+    }
+
+    // ==================== HELPER METHODS FOR NEW ENCODINGS ====================
+
+    /**
+     * Check if bot is under a roof (for weather protection)
+     */
+    isUnderRoof(bot) {
+        const pos = bot.entity.position;
+        for (let y = 1; y <= 5; y++) {
+            const block = bot.blockAt(pos.offset(0, y, 0));
+            if (block && block.name !== 'air' && !block.name.includes('leaves')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Simplified slime chunk detection (requires world seed, using heuristic)
+     */
+    isSlimeChunk(chunkX, chunkZ) {
+        // Simplified: use deterministic hash
+        const hash = (chunkX * 0x5DEECE66D + chunkZ) % 10;
+        return hash === 0; // ~10% of chunks
+    }
+
+    /**
+     * Check if near a dangerous fall
+     */
+    checkNearbyCliff(bot) {
+        const pos = bot.entity.position;
+        const testOffsets = [
+            { x: 2, y: -1, z: 0 }, { x: -2, y: -1, z: 0 },
+            { x: 0, y: -1, z: 2 }, { x: 0, y: -1, z: -2 }
+        ];
+
+        for (const offset of testOffsets) {
+            const testPos = new Vec3(pos.x + offset.x, pos.y + offset.y, pos.z + offset.z);
+            let depth = 0;
+            for (let y = 0; y > -10; y--) {
+                const checkPos = new Vec3(testPos.x, testPos.y + y, testPos.z);
+                const block = bot.blockAt(checkPos);
+                if (!block || block.name === 'air') {
+                    depth++;
+                } else {
+                    break;
+                }
+            }
+            if (depth >= 5) return true; // Cliff nearby
+        }
+        return false;
     }
 }
 
