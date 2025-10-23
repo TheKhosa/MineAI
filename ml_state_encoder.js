@@ -11,7 +11,7 @@ const { getMoodlesSystem } = require('./ml_zomboid_moodles');
 class StateEncoder {
     constructor() {
         // State vector dimensions
-        this.STATE_SIZE = 629;  // Expanded: 429 base + 200 plugin sensors + 65 additional mineflayer data (was 429)
+        this.STATE_SIZE = 694;  // Expanded: 429 base + 200 plugin sensors + 65 additional mineflayer data (was 429 → 629 → 694)
 
         // Sub-vector sizes
         this.POSITION_SIZE = 3;
@@ -1241,13 +1241,15 @@ class StateEncoder {
         // Feature 4-8: Closest 5 hostile mobs with distance and health
         const hostileMobs = entities
             .filter(e => e.type && ['ZOMBIE', 'SKELETON', 'SPIDER', 'CREEPER', 'ENDERMAN'].includes(e.type))
-            .sort((a, b) => a.distance - b.distance)
+            .sort((a, b) => (a.distance || 32) - (b.distance || 32)) // NULL SAFETY: default to far distance if undefined
             .slice(0, 5);
 
         for (let i = 0; i < 5; i++) {
             if (i < hostileMobs.length) {
                 const mob = hostileMobs[i];
-                state[offset++] = 1.0 - Math.min(1.0, mob.distance / 32.0); // Closer = higher value
+                // NULL SAFETY: Check if distance exists
+                const distance = (mob.distance != null) ? mob.distance : 32;
+                state[offset++] = 1.0 - Math.min(1.0, distance / 32.0); // Closer = higher value
             } else {
                 state[offset++] = 0;
             }
@@ -1287,12 +1289,16 @@ class StateEncoder {
         state[offset++] = Math.min(1.0, projectileCount / 5.0);
 
         // Feature 24-28: Directional threat analysis (which direction has most danger)
+        // NULL SAFETY: mob.x and mob.z may not exist in plugin data
         const threatByQuadrant = [0, 0, 0, 0]; // NE, SE, SW, NW
         hostileMobs.forEach(mob => {
-            if (mob.x >= 0 && mob.z >= 0) threatByQuadrant[0]++;
-            else if (mob.x >= 0 && mob.z < 0) threatByQuadrant[1]++;
-            else if (mob.x < 0 && mob.z < 0) threatByQuadrant[2]++;
-            else threatByQuadrant[3]++;
+            // Only count if we have position data
+            if (mob.x != null && mob.z != null) {
+                if (mob.x >= 0 && mob.z >= 0) threatByQuadrant[0]++;
+                else if (mob.x >= 0 && mob.z < 0) threatByQuadrant[1]++;
+                else if (mob.x < 0 && mob.z < 0) threatByQuadrant[2]++;
+                else threatByQuadrant[3]++;
+            }
         });
 
         threatByQuadrant.forEach(threat => {
@@ -1336,12 +1342,14 @@ class StateEncoder {
         // Feature 6-10: Closest 5 mobs targeting me with distance
         const threatMobs = mobAI
             .filter(m => m.targetType === 'PLAYER' && m.targetUUID === bot.uuid)
-            .sort((a, b) => a.distance - b.distance)
+            .sort((a, b) => (a.distance || 16) - (b.distance || 16)) // NULL SAFETY: default to medium distance
             .slice(0, 5);
 
         for (let i = 0; i < 5; i++) {
             if (i < threatMobs.length) {
-                state[offset++] = 1.0 - Math.min(1.0, threatMobs[i].distance / 16.0);
+                // NULL SAFETY: Check if distance exists
+                const distance = (threatMobs[i].distance != null) ? threatMobs[i].distance : 16;
+                state[offset++] = 1.0 - Math.min(1.0, distance / 16.0);
             } else {
                 state[offset++] = 0;
             }
@@ -1373,11 +1381,15 @@ class StateEncoder {
         state[offset++] = Math.min(1.0, flyingMobs / 3.0);
 
         // Feature 21-25: Mob health distribution
-        const lowHealthMobs = mobAI.filter(m => m.health < 5).length;
-        const medHealthMobs = mobAI.filter(m => m.health >= 5 && m.health < 15).length;
-        const highHealthMobs = mobAI.filter(m => m.health >= 15).length;
-        const avgHealth = mobAI.reduce((sum, m) => sum + m.health, 0) / Math.max(mobAI.length, 1);
-        const minHealth = Math.min(...mobAI.map(m => m.health), 20);
+        // NULL SAFETY: m.health might be undefined
+        const lowHealthMobs = mobAI.filter(m => (m.health || 20) < 5).length;
+        const medHealthMobs = mobAI.filter(m => {
+            const h = m.health || 20;
+            return h >= 5 && h < 15;
+        }).length;
+        const highHealthMobs = mobAI.filter(m => (m.health || 20) >= 15).length;
+        const avgHealth = mobAI.reduce((sum, m) => sum + (m.health || 20), 0) / Math.max(mobAI.length, 1);
+        const minHealth = Math.min(...mobAI.map(m => m.health || 20), 20);
 
         state[offset++] = Math.min(1.0, lowHealthMobs / 5.0);
         state[offset++] = Math.min(1.0, medHealthMobs / 10.0);
@@ -1627,7 +1639,9 @@ class StateEncoder {
 
         for (let i = 0; i < 5; i++) {
             if (i < valueItems.length) {
-                state[offset++] = 1.0 - Math.min(1.0, valueItems[i].distance / 32.0);
+                // NULL SAFETY: Check if distance exists
+                const distance = (valueItems[i].distance != null) ? valueItems[i].distance : 32;
+                state[offset++] = 1.0 - Math.min(1.0, distance / 32.0);
             } else {
                 state[offset++] = 0;
             }
