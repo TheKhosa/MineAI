@@ -1026,103 +1026,177 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
                     reject(new Error(`Spawn timeout for ${agentName}`));
                 }, 60000);
 
-                // Resolve on spawn
-                bot.once('spawn', () => {
-                    clearTimeout(spawnTimeout);
-                    console.log(`[SPAWN SUCCESS] ${agentName} spawned successfully`);
+                // Helper function to initialize bot after spawn/respawn
+                const initializeBot = (isRespawn = false) => {
+                    try {
+                        console.log(`[${isRespawn ? 'RESPAWN' : 'SPAWN'} INIT] ${agentName} initializing...`);
 
-                    // Register in lineage tracker
-                    if (lineageTracker) {
-                        lineageTracker.registerAgent(agentType, agentName, generation, parentName, parentUUID);
-                    }
+                        // Register in lineage tracker (only on first spawn)
+                        if (!isRespawn && lineageTracker) {
+                            lineageTracker.registerAgent(agentType, agentName, generation, parentName, parentUUID);
+                        }
 
-                    // Initialize pathfinder
-                    const movements = new Movements(bot);
-                    bot.pathfinder.setMovements(movements);
+                        // Initialize/re-initialize pathfinder
+                        try {
+                            const movements = new Movements(bot);
+                            bot.pathfinder.setMovements(movements);
+                            console.log(`[PATHFINDER] ${bot.agentName} pathfinder ${isRespawn ? 're-' : ''}initialized`);
+                        } catch (error) {
+                            console.error(`[PATHFINDER] ${bot.agentName} failed: ${error.message}`);
+                        }
 
-                    // Connect to Plugin Sensor Server (if enabled)
-                    if (config.plugin.enabled && bot.pluginSensorClient) {
-                        console.log(`[PLUGIN SENSOR] ${bot.agentName} connecting to WebSocket...`);
+                        // Connect to Plugin Sensor Server (if enabled and not already connected)
+                        if (config.plugin.enabled && bot.pluginSensorClient && !bot._pluginConnected) {
+                            try {
+                                console.log(`[PLUGIN SENSOR] ${bot.agentName} connecting to WebSocket...`);
 
-                        bot.pluginSensorClient.on('connected', () => {
-                            console.log(`[PLUGIN SENSOR] ${bot.agentName} WebSocket connected`);
-                        });
+                                bot.pluginSensorClient.on('connected', () => {
+                                    console.log(`[PLUGIN SENSOR] ${bot.agentName} WebSocket connected`);
+                                });
 
-                        bot.pluginSensorClient.on('authenticated', () => {
-                            console.log(`[PLUGIN SENSOR] ${bot.agentName} authenticated, registering...`);
-                            bot.pluginSensorClient.registerBot(bot.agentName);
-                        });
+                                bot.pluginSensorClient.on('authenticated', () => {
+                                    console.log(`[PLUGIN SENSOR] ${bot.agentName} authenticated, registering...`);
+                                    bot.pluginSensorClient.registerBot(bot.agentName);
+                                });
 
-                        bot.pluginSensorClient.on('registered', (botName) => {
-                            console.log(`[PLUGIN SENSOR] ${bot.agentName} registered for sensor updates`);
-                        });
+                                bot.pluginSensorClient.on('registered', (botName) => {
+                                    console.log(`[PLUGIN SENSOR] ${bot.agentName} registered for sensor updates`);
+                                });
 
-                        bot.pluginSensorClient.on('sensor_update', ({ botName, timestamp, data }) => {
-                            bot.pluginSensorData = data; // Store latest sensor data for ML state encoding
+                                bot.pluginSensorClient.on('sensor_update', ({ botName, timestamp, data }) => {
+                                    bot.pluginSensorData = data;
 
-                            // Optional: Log first update as confirmation
-                            if (!bot._firstSensorUpdate) {
-                                bot._firstSensorUpdate = true;
-                                console.log(`[PLUGIN SENSOR] ${bot.agentName} receiving sensor data (${data.blocks?.length || 0} blocks, ${data.entities?.length || 0} entities)`);
-                            }
-                        });
-
-                        bot.pluginSensorClient.on('error', (error) => {
-                            console.error(`[PLUGIN SENSOR] ${bot.agentName} error: ${error.message}`);
-                        });
-
-                        // Connect after setting up event handlers
-                        bot.pluginSensorClient.connect();
-                    }
-
-                    // Execute join commands (e.g., /server survival)
-                    if (config.agents.joinCommands && config.agents.joinCommands.length > 0) {
-                        console.log(`[JOIN COMMANDS] ${bot.agentName} will execute ${config.agents.joinCommands.length} join command(s) in 2 seconds...`);
-
-                        // Execute commands sequentially with delay
-                        const executeCommands = async () => {
-                            // Wait 2 seconds after spawn before sending commands
-                            await new Promise(resolve => setTimeout(resolve, 2000));
-
-                            for (const cmd of config.agents.joinCommands) {
-                                try {
-                                    console.log(`[JOIN COMMANDS] ${bot.agentName} executing: ${cmd}`);
-                                    bot.chat(cmd);
-
-                                    // Wait between commands if there are multiple
-                                    if (config.agents.joinCommandDelay && config.agents.joinCommands.length > 1) {
-                                        await new Promise(resolve => setTimeout(resolve, config.agents.joinCommandDelay));
+                                    if (!bot._firstSensorUpdate) {
+                                        bot._firstSensorUpdate = true;
+                                        console.log(`[PLUGIN SENSOR] ${bot.agentName} receiving sensor data (${data.blocks?.length || 0} blocks, ${data.entities?.length || 0} entities)`);
                                     }
-                                } catch (error) {
-                                    console.error(`[JOIN COMMANDS] ${bot.agentName} failed to execute "${cmd}": ${error.message}`);
-                                }
+                                });
+
+                                bot.pluginSensorClient.on('error', (error) => {
+                                    console.error(`[PLUGIN SENSOR] ${bot.agentName} error: ${error.message}`);
+                                });
+
+                                bot.pluginSensorClient.connect();
+                                bot._pluginConnected = true;
+                            } catch (error) {
+                                console.error(`[PLUGIN SENSOR] ${bot.agentName} connection failed: ${error.message}`);
                             }
-                        };
+                        }
 
-                        executeCommands().catch(err => {
-                            console.error(`[JOIN COMMANDS] ${bot.agentName} error: ${err.message}`);
-                        });
+                        // Setup event handlers (only on first spawn)
+                        if (!isRespawn) {
+                            try {
+                                setupAgentEvents(bot);
+                                console.log(`[EVENTS] ${bot.agentName} event handlers registered`);
+                            } catch (error) {
+                                console.error(`[EVENTS] ${bot.agentName} failed: ${error.message}`);
+                            }
+                        }
+
+                        // Start/restart ML behavior loop
+                        if (!bot._behaviorStarted || isRespawn) {
+                            try {
+                                startAgentBehavior(bot);
+                                bot._behaviorStarted = true;
+                                console.log(`[ML BEHAVIOR] ${bot.agentName} ${isRespawn ? 'restarted' : 'started'}`);
+                            } catch (error) {
+                                console.error(`[ML BEHAVIOR] ${bot.agentName} failed: ${error.message}`);
+                            }
+                        }
+
+                        // Emit to dashboard
+                        if (dashboard && dashboard.emitAgentJoined) {
+                            try {
+                                dashboard.emitAgentJoined({
+                                    name: bot.agentName,
+                                    type: bot.agentType,
+                                    generation: bot.generation,
+                                    uuid: bot.uuid,
+                                    parentUUID: bot.parentUUID
+                                });
+                            } catch (error) {
+                                console.error(`[DASHBOARD] ${bot.agentName} emit failed: ${error.message}`);
+                            }
+                        }
+
+                        if (!isRespawn) {
+                            if (callback) callback(bot);
+                            resolve(bot);
+                        }
+                    } catch (error) {
+                        console.error(`[INIT ERROR] ${bot.agentName}: ${error.message}`);
+                        if (!isRespawn) reject(error);
                     }
+                };
 
-                    // Setup event handlers (death, health, etc.)
-                    setupAgentEvents(bot);
+                // Handle initial spawn
+                bot.once('spawn', () => {
+                    try {
+                        clearTimeout(spawnTimeout);
+                        console.log(`[SPAWN SUCCESS] ${agentName} spawned in ${bot.game.dimension || 'unknown'}`);
 
-                    // Start ML behavior loop NOW
-                    startAgentBehavior(bot);
+                        // Check if we need to switch servers
+                        const willSwitchServers = config.agents.joinCommands && config.agents.joinCommands.length > 0;
 
-                    // Emit to dashboard
-                    if (dashboard && dashboard.emitAgentJoined) {
-                        dashboard.emitAgentJoined({
-                            name: bot.agentName,
-                            type: bot.agentType,
-                            generation: bot.generation,
-                            uuid: bot.uuid,
-                            parentUUID: bot.parentUUID
-                        });
+                        if (willSwitchServers) {
+                            console.log(`[SERVER SWITCH] ${bot.agentName} will switch servers, delaying full initialization...`);
+
+                            // Execute join commands FIRST
+                            const executeCommands = async () => {
+                                try {
+                                    await new Promise(resolve => setTimeout(resolve, 2000));
+
+                                    for (const cmd of config.agents.joinCommands) {
+                                        console.log(`[JOIN COMMANDS] ${bot.agentName} executing: ${cmd}`);
+                                        bot.chat(cmd);
+
+                                        if (config.agents.joinCommandDelay && config.agents.joinCommands.length > 1) {
+                                            await new Promise(resolve => setTimeout(resolve, config.agents.joinCommandDelay));
+                                        }
+                                    }
+
+                                    console.log(`[SERVER SWITCH] ${bot.agentName} waiting for respawn event...`);
+                                } catch (error) {
+                                    console.error(`[JOIN COMMANDS] ${bot.agentName} error: ${error.message}`);
+                                }
+                            };
+
+                            executeCommands().catch(err => {
+                                console.error(`[SERVER SWITCH] ${bot.agentName} failed: ${err.message}`);
+                            });
+                        } else {
+                            // No server switch, initialize immediately
+                            initializeBot(false);
+                        }
+                    } catch (error) {
+                        console.error(`[SPAWN] ${bot.agentName} error: ${error.message}`);
+                        reject(error);
                     }
+                });
 
-                    if (callback) callback(bot);
-                    resolve(bot);
+                // Handle respawn (server switch, death, etc.) - Initialize HERE for server switches
+                bot.on('respawn', () => {
+                    try {
+                        console.log(`[RESPAWN] ${bot.agentName} respawned in ${bot.game.dimension || 'unknown'} at ${bot.entity?.position || 'unknown'}`);
+
+                        // If this is a server switch (first respawn), do full initialization
+                        if (!bot._initializedAfterSwitch) {
+                            console.log(`[SERVER SWITCH COMPLETE] ${bot.agentName} now on survival server, initializing...`);
+                            bot._initializedAfterSwitch = true;
+                            initializeBot(true);
+                        } else {
+                            // Just a death respawn, re-init pathfinder
+                            console.log(`[DEATH RESPAWN] ${bot.agentName} re-initializing pathfinder...`);
+                            try {
+                                const movements = new Movements(bot);
+                                bot.pathfinder.setMovements(movements);
+                            } catch (error) {
+                                console.error(`[PATHFINDER] ${bot.agentName} re-init failed: ${error.message}`);
+                            }
+                        }
+                    } catch (error) {
+                        console.error(`[RESPAWN] ${bot.agentName} error: ${error.message}`);
+                    }
                 });
 
                 // Handle errors
