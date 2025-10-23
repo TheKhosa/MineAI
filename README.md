@@ -94,7 +94,7 @@ This project creates self-evolving AI agents in Minecraft that:
   - Agents start with tree chopping, mining, crafting, navigation skills
   - See **[PRETRAIN_GUIDE.md](PRETRAIN_GUIDE.md)** and **[COMPREHENSIVE_PRETRAIN_GUIDE.md](COMPREHENSIVE_PRETRAIN_GUIDE.md)**
 
-- **429-dimensional state space** encoding:
+- **1,028-dimensional state space** encoding (expanded from 694):
   - Social context (nearby agents, cooperation opportunities)
   - Achievement progress (diamonds, armor, exploration)
   - Curiosity signals (novelty detection, exploration breadth)
@@ -104,21 +104,12 @@ This project creates self-evolving AI agents in Minecraft that:
   - Sub-skills tracking (20 McMMO-style skills)
   - Moodles/debuffs (14 status effects)
 
-- **216 diverse actions** (3x expansion) with modular architecture:
-  - **Basic Actions** (76): Movement, combat, mining, crafting, cooperative, village building
-  - **Inventory Management** (15): Toss trash, sort, equip armor sets, prioritize valuables
-  - **Advanced Crafting** (20): Specific tool/weapon/armor recipes, smelting
-  - **Container Operations** (12): Chest management, furnace operations
-  - **Enchanting & Brewing** (10): Enchant items, anvil repair, brew potions
-  - **Trading** (8): Villager trading, cure zombies, trading halls
-  - **Agriculture** (15): Crop farming, animal breeding, farming automation
-  - **Redstone** (10): Levers, buttons, doors, redstone circuits
-  - **Bed & Time** (5): Sleep mechanics, shelter finding
-  - **Advanced Combat** (12): Critical hits, shield blocking, kiting, combos
-  - **Advanced Navigation** (15): Swimming, climbing, parkour, pillaring
-  - **Resource Optimization** (10): Tool selection, efficient mining strategies
-  - **Communication** (8): Agent signaling, formation coordination
-  - **Architecture**: Modular design with `ActionUtils` preventing circular references
+- **388 diverse actions** (expanded from 216) with modular architecture:
+  - **Core Actions** (76): Movement, combat, mining, crafting, cooperative, village building
+  - **Modular Actions** (140): Inventory (15), Crafting (20), Containers (12), Enchanting (10), Trading (8), Agriculture (15), Redstone (10), Bed (5), Combat (12), Navigation (15), Optimization (10), Communication (8)
+  - **Advanced Actions** (81): Dimension travel (9), Hotbar management (13), Combat timing (11), Villager trading (7), Tool management (9), Storage (7), Vehicles (8), Spawn (7), Fishing (4), Flight (6)
+  - **Essential Actions** (91): Health, Social, Potions, Exploration, Needs, Experience, Memory, Achievements, Team, Weather
+  - **Architecture**: 32 modular action classes with `ActionUtils` preventing circular references
 
 - **Dense reward shaping** with psychological modulation:
   - Survival, exploration, cooperation rewards
