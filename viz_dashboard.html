@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Brain Visualization - Live Graph</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #fff;
+            overflow: hidden;
+        }
+
+        #container {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            grid-template-rows: 60px 1fr 200px;
+            height: 100vh;
+            gap: 10px;
+            padding: 10px;
+        }
+
+        #header {
+            grid-column: 1 / -1;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 15px 25px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #00f5ff, #00ff88);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .stats {
+            display: flex;
+            gap: 30px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #00f5ff;
+        }
+
+        .stat-label {
+            font-size: 11px;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+
+        #graph-container {
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        #sidebar {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        #timeline {
+            grid-column: 1 / -1;
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            margin-bottom: 20px;
+        }
+
+        .sidebar-section h3 {
+            font-size: 14px;
+            color: #00f5ff;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .agent-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .agent-card:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: #00f5ff;
+            transform: translateX(5px);
+        }
+
+        .agent-card.selected {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+        }
+
+        .agent-name {
+            font-weight: bold;
+            font-size: 13px;
+            color: #00f5ff;
+        }
+
+        .agent-type {
+            font-size: 11px;
+            opacity: 0.7;
+            text-transform: uppercase;
+        }
+
+        .agent-health {
+            font-size: 11px;
+            margin-top: 5px;
+        }
+
+        .health-bar {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            margin-top: 3px;
+            overflow: hidden;
+        }
+
+        .health-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ff8844);
+            transition: width 0.3s;
+        }
+
+        .health-fill.high {
+            background: linear-gradient(90deg, #00ff88, #00f5ff);
+        }
+
+        .action-item {
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 3px solid #00f5ff;
+            padding: 8px;
+            margin-bottom: 5px;
+            font-size: 11px;
+            border-radius: 3px;
+        }
+
+        .action-timestamp {
+            opacity: 0.5;
+            font-size: 10px;
+        }
+
+        .brain-probs {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+            margin-top: 10px;
+        }
+
+        .prob-bar {
+            display: flex;
+            align-items: center;
+            font-size: 10px;
+        }
+
+        .prob-label {
+            width: 100px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .prob-fill-container {
+            flex: 1;
+            height: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 0 5px;
+        }
+
+        .prob-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #00f5ff, #00ff88);
+            transition: width 0.3s;
+        }
+
+        .prob-value {
+            width: 35px;
+            text-align: right;
+            opacity: 0.7;
+        }
+
+        .legend {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 11px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 245, 255, 0.3);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 245, 255, 0.5);
+        }
+
+        .node {
+            cursor: pointer;
+        }
+
+        .node circle {
+            stroke-width: 2px;
+        }
+
+        .node text {
+            font-size: 10px;
+            font-weight: 600;
+            text-anchor: middle;
+            pointer-events: none;
+            fill: #fff;
+            text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+        }
+
+        .link {
+            stroke-opacity: 0.6;
+            transition: stroke-opacity 0.3s;
+        }
+
+        .link:hover {
+            stroke-opacity: 1;
+            stroke-width: 3px;
+        }
+
+        .vector-arrow {
+            stroke-width: 2;
+            marker-end: url(#arrowhead);
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 18px;
+            opacity: 0.5;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <div id="header">
+            <h1>🧠 Agent Brain Visualization</h1>
+            <div class="stats">
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-agents">0</div>
+                    <div class="stat-label">Agents</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-relationships">0</div>
+                    <div class="stat-label">Relationships</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-reward">0.0</div>
+                    <div class="stat-label">Avg Reward</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value" id="stat-actions">0</div>
+                    <div class="stat-label">Active Actions</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="graph-container">
+            <div class="loading">Connecting to GraphQL...</div>
+            <svg id="graph"></svg>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #00f5ff;"></div>
+                    <span>Agent Node</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #00ff88;"></div>
+                    <span>Friend Bond</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ff4444;"></div>
+                    <span>Rival Bond</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #888;"></div>
+                    <span>Neutral</span>
+                </div>
+            </div>
+        </div>
+
+        <div id="sidebar">
+            <div class="sidebar-section">
+                <h3>Selected Agent</h3>
+                <div id="selected-agent">
+                    <p style="opacity: 0.5; font-size: 12px;">Click an agent in the graph</p>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3>Action Probabilities</h3>
+                <div id="action-probs" class="brain-probs">
+                    <p style="opacity: 0.5; font-size: 12px;">Select an agent to view</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="timeline">
+            <h3 style="margin-bottom: 10px; color: #00f5ff; font-size: 14px;">🔄 Live Action Stream</h3>
+            <div id="action-stream"></div>
+        </div>
+    </div>
+
+    <!-- D3.js for graph visualization -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <script>
+        // GraphQL Configuration
+        const GRAPHQL_ENDPOINT = 'http://localhost:4000/graphql';
+
+        let selectedAgent = null;
+        let agents = [];
+        let relationships = [];
+
+        // SVG Setup
+        const svg = d3.select('#graph');
+        const container = document.getElementById('graph-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        svg.attr('width', width).attr('height', height);
+
+        // Arrow marker for vectors
+        svg.append('defs').append('marker')
+            .attr('id', 'arrowhead')
+            .attr('viewBox', '-0 -5 10 10')
+            .attr('refX', 20)
+            .attr('refY', 0)
+            .attr('orient', 'auto')
+            .attr('markerWidth', 8)
+            .attr('markerHeight', 8)
+            .append('svg:path')
+            .attr('d', 'M 0,-5 L 10,0 L 0,5')
+            .attr('fill', '#00f5ff');
+
+        // Force simulation
+        const simulation = d3.forceSimulation()
+            .force('link', d3.forceLink().id(d => d.name).distance(150))
+            .force('charge', d3.forceManyBody().strength(-300))
+            .force('center', d3.forceCenter(width / 2, height / 2))
+            .force('collision', d3.forceCollide().radius(30));
+
+        let link = svg.append('g').selectAll('.link');
+        let node = svg.append('g').selectAll('.node');
+
+        // ===== GRAPHQL QUERIES =====
+
+        async function fetchGraphData() {
+            const query = `
+                query {
+                    relationshipGraph {
+                        nodes {
+                            name
+                            type
+                            health
+                            food
+                            cumulativeReward
+                            position { x y z }
+                            currentAction {
+                                actionName
+                                category
+                            }
+                        }
+                        edges {
+                            source
+                            target
+                            strength
+                            type
+                        }
+                    }
+                    stats {
+                        totalAgents
+                        totalRelationships
+                        averageReward
+                        activeActions
+                    }
+                }
+            `;
+
+            try {
+                const response = await fetch(GRAPHQL_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+
+                const { data } = await response.json();
+
+                if (data) {
+                    updateStats(data.stats);
+                    updateGraph(data.relationshipGraph);
+                }
+            } catch (error) {
+                console.error('GraphQL fetch error:', error);
+            }
+        }
+
+        async function fetchAgentDetails(agentName) {
+            const query = `
+                query GetAgent($name: String!) {
+                    agent(name: $name) {
+                        name
+                        type
+                        generation
+                        health
+                        food
+                        cumulativeReward
+                        position { x y z }
+                        brainState {
+                            actionProbabilities {
+                                actionName
+                                probability
+                                category
+                            }
+                            valueEstimate
+                        }
+                        currentAction {
+                            actionName
+                            category
+                            timestamp
+                        }
+                        relationships {
+                            targetAgent { name }
+                            bondStrength
+                            relationshipType
+                        }
+                    }
+                }
+            `;
+
+            try {
+                const response = await fetch(GRAPHQL_ENDPOINT, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        query,
+                        variables: { name: agentName }
+                    })
+                });
+
+                const { data } = await response.json();
+
+                if (data && data.agent) {
+                    displayAgentDetails(data.agent);
+                }
+            } catch (error) {
+                console.error('Error fetching agent details:', error);
+            }
+        }
+
+        // ===== UPDATE FUNCTIONS =====
+
+        function updateStats(stats) {
+            document.getElementById('stat-agents').textContent = stats.totalAgents;
+            document.getElementById('stat-relationships').textContent = stats.totalRelationships;
+            document.getElementById('stat-reward').textContent = stats.averageReward.toFixed(1);
+            document.getElementById('stat-actions').textContent = stats.activeActions;
+        }
+
+        function updateGraph(graph) {
+            agents = graph.nodes;
+            relationships = graph.edges;
+
+            // Update links
+            link = link.data(relationships, d => `${d.source}-${d.target}`)
+                .join('line')
+                .attr('class', 'link')
+                .attr('stroke', d => {
+                    if (d.type === 'friend') return '#00ff88';
+                    if (d.type === 'rival') return '#ff4444';
+                    return '#888';
+                })
+                .attr('stroke-width', d => Math.abs(d.strength) * 3 + 1);
+
+            // Update nodes
+            const nodeData = node.data(agents, d => d.name);
+
+            const nodeEnter = nodeData.enter()
+                .append('g')
+                .attr('class', 'node')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended))
+                .on('click', (event, d) => {
+                    selectedAgent = d.name;
+                    fetchAgentDetails(d.name);
+                    updateNodeSelection();
+                });
+
+            nodeEnter.append('circle')
+                .attr('r', 12)
+                .attr('fill', d => getAgentColor(d.type))
+                .attr('stroke', '#fff');
+
+            nodeEnter.append('text')
+                .attr('dy', -18)
+                .text(d => d.name.substring(0, 12));
+
+            node = nodeEnter.merge(nodeData);
+
+            // Update node appearance
+            node.select('circle')
+                .attr('fill', d => getAgentColor(d.type))
+                .attr('r', d => 12 + (d.cumulativeReward > 0 ? Math.min(d.cumulativeReward / 10, 10) : 0));
+
+            nodeData.exit().remove();
+
+            // Update simulation
+            simulation.nodes(agents);
+            simulation.force('link').links(relationships);
+            simulation.alpha(0.3).restart();
+
+            // Hide loading
+            const loadingEl = container.querySelector('.loading');
+            if (loadingEl) loadingEl.style.display = 'none';
+        }
+
+        function updateNodeSelection() {
+            node.selectAll('circle')
+                .attr('stroke-width', d => d.name === selectedAgent ? 4 : 2)
+                .attr('stroke', d => d.name === selectedAgent ? '#00ff88' : '#fff');
+        }
+
+        function displayAgentDetails(agent) {
+            const html = `
+                <div class="agent-card selected">
+                    <div class="agent-name">${agent.name}</div>
+                    <div class="agent-type">${agent.type} (Gen ${agent.generation})</div>
+                    <div class="agent-health">
+                        Health: ${agent.health}/20 | Food: ${agent.food}/20
+                        <div class="health-bar">
+                            <div class="health-fill ${agent.health > 15 ? 'high' : ''}"
+                                 style="width: ${(agent.health / 20) * 100}%"></div>
+                        </div>
+                    </div>
+                    <div style="font-size: 11px; margin-top: 8px;">
+                        <strong>Reward:</strong> ${agent.cumulativeReward.toFixed(1)}<br>
+                        <strong>Position:</strong> (${Math.floor(agent.position.x)}, ${Math.floor(agent.position.y)}, ${Math.floor(agent.position.z)})<br>
+                        ${agent.currentAction ? `<strong>Action:</strong> ${agent.currentAction.actionName}` : ''}
+                    </div>
+                </div>
+
+                ${agent.relationships.length > 0 ? `
+                    <h4 style="margin-top: 15px; font-size: 12px; color: #00f5ff;">Relationships</h4>
+                    ${agent.relationships.map(rel => `
+                        <div style="font-size: 10px; margin: 5px 0; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 3px;">
+                            ${rel.targetAgent.name}: ${rel.relationshipType} (${(rel.bondStrength * 100).toFixed(0)}%)
+                        </div>
+                    `).join('')}
+                ` : ''}
+            `;
+
+            document.getElementById('selected-agent').innerHTML = html;
+
+            // Update action probabilities
+            if (agent.brainState && agent.brainState.actionProbabilities.length > 0) {
+                const probs = agent.brainState.actionProbabilities.slice(0, 10);
+                const probHtml = probs.map(ap => `
+                    <div class="prob-bar">
+                        <div class="prob-label" title="${ap.actionName}">${ap.actionName}</div>
+                        <div class="prob-fill-container">
+                            <div class="prob-fill" style="width: ${ap.probability * 100}%"></div>
+                        </div>
+                        <div class="prob-value">${(ap.probability * 100).toFixed(1)}%</div>
+                    </div>
+                `).join('');
+
+                document.getElementById('action-probs').innerHTML = `
+                    <div style="font-size: 11px; margin-bottom: 8px; opacity: 0.7;">
+                        Value Estimate: ${agent.brainState.valueEstimate.toFixed(2)}
+                    </div>
+                    ${probHtml}
+                `;
+            }
+        }
+
+        // ===== SIMULATION TICK =====
+
+        simulation.on('tick', () => {
+            link
+                .attr('x1', d => d.source.x)
+                .attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x)
+                .attr('y2', d => d.target.y);
+
+            node.attr('transform', d => `translate(${d.x},${d.y})`);
+        });
+
+        // ===== DRAG HANDLERS =====
+
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        // ===== HELPERS =====
+
+        function getAgentColor(type) {
+            const colors = {
+                MINING: '#ff8800',
+                LUMBERJACK: '#8B4513',
+                FISHING: '#4169E1',
+                FARMING: '#32CD32',
+                EXPLORING: '#00f5ff',
+                BUILDER: '#FFD700',
+                GUARD: '#DC143C',
+                TRADER: '#9370DB',
+                QUARRY: '#B8860B',
+                GEMOLOGIST: '#9370DB',
+                FORAGER: '#90EE90',
+                HUNTING: '#8B0000',
+                HEALER: '#FFB6C1',
+                BLACKSMITH: '#696969',
+                ALCHEMIST: '#800080',
+                ENCHANTER: '#4B0082',
+                REDSTONE_ENGINEER: '#DC143C',
+                CARTOGRAPHER: '#DEB887',
+                NETHER_EXPLORER: '#8B0000',
+                END_RAIDER: '#2F4F4F'
+            };
+            return colors[type] || '#00f5ff';
+        }
+
+        // ===== START =====
+
+        // Initial fetch
+        fetchGraphData();
+
+        // Poll every 2 seconds
+        setInterval(fetchGraphData, 2000);
+
+        console.log('🧠 Agent Brain Visualization Ready!');
+        console.log('GraphQL Endpoint:', GRAPHQL_ENDPOINT);
+    </script>
+</body>
+</html>

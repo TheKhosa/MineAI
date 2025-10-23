@@ -12,15 +12,29 @@
 module.exports = {
     // ===== SERVER CONFIGURATION =====
     server: {
-        host: 'vps-38b05e45.vps.ovh.net',
-        port: 25565
+        host: 'localhost',  // Connect to BungeeCord lobby
+        port: 25565  // BungeeCord lobby port - then use /server survival to switch
+    },
+
+    // ===== PLUGIN SENSOR CONFIGURATION =====
+    plugin: {
+        enabled: true,  // Enable AgentSensorPlugin WebSocket integration
+        host: 'localhost',
+        port: 3002,
+        authToken: 'mineagent-sensor-2024',
+        reconnectInterval: 5000,
+        reconnectMaxAttempts: 10
     },
 
     // ===== AGENT CONFIGURATION =====
     agents: {
         maxAgents: 20,  // Maximum number of concurrent agents
-        batchSpawnSize: 1,  // Number of agents to spawn per batch
+        batchSpawnSize: 10,  // Number of agents to spawn per batch
         batchSpawnDelay: 15000,  // Delay between batches (ms)
+
+        // Commands to execute when joining server (for BungeeCord server switching)
+        joinCommands: ['/server survival'],  // Switch to survival server after joining lobby
+        joinCommandDelay: 1000,  // Delay between executing join commands (ms)
 
         // Agent types - one agent of each type will be spawned
         types: [
@@ -53,7 +67,7 @@ module.exports = {
 
         // Neural network architecture
         stateSpace: 429,  // Dimensions in state vector
-        actionSpace: 70,  // Number of possible actions
+        actionSpace: 216,  // Number of possible actions (expanded from 76 to 216 in v1.1.0)
 
         // PPO (Proximal Policy Optimization) parameters
         algorithm: 'PPO',
@@ -84,10 +98,10 @@ module.exports = {
 
     // ===== LLM CONFIGURATION =====
     llm: {
-        enabled: false,  // Enable/disable agent chat (set false for dev to skip model loading)
+        enabled: true,  // Enable action-aware chat system
 
-        // Backend options: 'mock', 'transformers', 'llamacpp', 'ollama', 'python'
-        backend: 'transformers',  // Using transformers for now, switch to llamacpp after node-llama-cpp installs
+        // Backend options: 'mock', 'transformers', 'llamacpp', 'ollama', 'gemini', 'python'
+        backend: 'ollama',  // Using Ollama with smollm2:135m
 
         // Model settings per backend
         transformers: {
@@ -109,7 +123,15 @@ module.exports = {
         ollama: {
             host: 'localhost',
             port: 11434,
-            model: 'llama2'
+            model: 'smollm2:135m'  // ✅ WORKING - Upgrade to qwen2.5:3b or llama3.2:3b for better responses
+        },
+
+        gemini: {
+            apiKey: 'AQ.Ab8RN6Je15Z-APrrM5DJ7WkCZ4qqxRO4hdJjDPa7BXbF9A1u3w',
+            model: 'gemini-2.5-flash-lite',
+            endpoint: 'https://aiplatform.googleapis.com/v1',
+            maxTokens: 50,
+            temperature: 0.8
         },
 
         mock: {
@@ -169,6 +191,13 @@ module.exports = {
         consoleBufferSize: 500  // Number of console lines to keep
     },
 
+    // ===== GRAPHQL VISUALIZATION =====
+    visualization: {
+        enabled: true,  // Enable GraphQL-powered live graph visualization
+        port: 4000,  // Port for GraphQL server and dashboard
+        pollInterval: 2000  // How often dashboard polls for updates (ms)
+    },
+
     // ===== THREADING CONFIGURATION =====
     threading: {
         enabled: true,  // Multi-threaded agent isolation
@@ -198,14 +227,22 @@ module.exports = {
 
     // ===== FEATURE FLAGS =====
     features: {
-        enableIdlePenalty: false,  // Disable idle penalties (let agents explore)
+        enableIdlePenalty: true,  // Enable idle penalties - if you ain't learning, you dying
+        idlePenaltyAmount: -2.0,  // Penalty per idle check (-2 reward)
+        idleCheckInterval: 3000,  // Check every 3 seconds
+        idleThreshold: 6000,  // Consider idle after 6 seconds without significant action
         enableRewardDecay: false,  // Disable reward decay
         enableStuckDetection: true,  // Enable stuck detection and respawning
         enableKnowledgeSharing: true,  // Enable agents sharing experiences
         enableSocialRewards: true,  // Reward social interactions
         enableMoodSystem: true,  // Sims-like needs and moods
         enableLineageTracking: true,  // Track parent→offspring relationships
-        enableGameMaster: false  // Disable GameMaster (agents are autonomous)
+        enableGameMaster: false,  // Disable GameMaster (agents are autonomous)
+
+        // Death/Respawn System
+        enableRewardThresholdDeath: true,  // Kill agents when cumulative reward drops below threshold
+        deathRewardThreshold: -20.0,  // Death threshold: cumulative reward < -20
+        checkDeathInterval: 5000  // Check death condition every 5 seconds
     },
 
     // ===== DEBUGGING =====

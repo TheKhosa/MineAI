@@ -15,7 +15,8 @@ class DownloadManager {
             mock: { ready: true, required: [] },
             transformers: { ready: false, required: ['@huggingface/transformers', 'onnxruntime-node'] },
             llamacpp: { ready: false, required: ['node-llama-cpp'] },
-            ollama: { ready: false, required: [] }
+            ollama: { ready: false, required: [] },
+            gemini: { ready: true, required: [] }  // Cloud API, no local dependencies
         };
     }
 
@@ -47,6 +48,12 @@ class DownloadManager {
 
         if (backend === 'mock') {
             console.log('✅ Mock backend requires no dependencies - ready to use!');
+            return true;
+        }
+
+        if (backend === 'gemini') {
+            console.log('✅ Gemini backend (Google Cloud API) - ready to use!');
+            console.log('   Using API key from config.js');
             return true;
         }
 

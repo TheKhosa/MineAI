@@ -1,0 +1,20 @@
+{
+  "tick": 100,
+  "timestamp": 1760831725811,
+  "totalAgents": 10,
+  "parents": [
+    {
+      "name": "Agent8",
+      "fitness": 94.54304419115039,
+      "steps": 14
+    },
+    {
+      "name": "Agent6",
+      "fitness": 90.79392746864627,
+      "steps": 13
+    }
+  ],
+  "avgFitness": 53.600451733179774,
+  "maxFitness": 94.54304419115039,
+  "minFitness": 12.340847817684807
+}

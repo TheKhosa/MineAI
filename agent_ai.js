@@ -185,7 +185,9 @@ Respond to messages naturally and helpfully!`;
             return `I'm doing well! Just working on my ${this.agentType} duties.`;
         }
 
-        return `Thanks for the message! I'm busy with my ${this.agentType} work right now.`;
+        // Return null to let ChatManager filter this response
+        // (prevents spam from generic fallback)
+        return null;
     }
 
     // AI-driven behavior adaptation

@@ -416,6 +416,8 @@ class MLTrainer {
 
         } catch (error) {
             console.error(`[ML TRAINER] Error in agent step: ${error.message}`);
+            console.error(`[ML TRAINER] Stack trace:`);
+            console.error(error.stack);
             return null;
         }
     }
@@ -571,6 +573,14 @@ class MLTrainer {
             }
         }
         bot.mlLastPosition = bot.entity ? bot.entity.position.clone() : null;
+
+        // === CUMULATIVE REWARD TRACKING FOR DEATH THRESHOLD ===
+        // Initialize cumulative reward tracker
+        if (!bot.mlCumulativeReward) {
+            bot.mlCumulativeReward = 0;
+        }
+        // Add current step reward to cumulative total
+        bot.mlCumulativeReward += reward;
 
         // === 5. INTERACTION REWARDS (From existing reward tracker) ===
         if (bot.rewards) {
@@ -852,16 +862,39 @@ class MLTrainer {
             rewardBreakdown.push(`stuck:-3.0`);
         }
 
-        // REMOVED: Idle penalty - agents need freedom to learn and explore
-        // Reset idle counter for tracking purposes only
+        // IDLE PENALTY - Punish agents who aren't taking meaningful actions
+        // Track idle time based on movement and inventory changes
         if (bot.entity && bot.mlLastPosition) {
             const distMoved = bot.entity.position.distanceTo(bot.mlLastPosition);
-            bot.mlIdleSteps = distMoved < 0.1 ? (bot.mlIdleSteps || 0) + 1 : 0;
+            const invChanged = currentInvSize !== lastInvSize;
+            const healthChanged = healthChange !== 0;
+            const actionTaken = invChanged || healthChanged || distMoved > 0.1;
+
+            if (actionTaken) {
+                // Agent is active, reset idle counter
+                bot.mlIdleSteps = 0;
+                bot.mlLastActionTime = Date.now();
+            } else {
+                // Agent is idle, increment counter
+                bot.mlIdleSteps = (bot.mlIdleSteps || 0) + 1;
+            }
+
+            // Apply idle penalty based on config
+            const config = require('./config');
+            if (config.features.enableIdlePenalty) {
+                const idleTime = Date.now() - (bot.mlLastActionTime || Date.now());
+                if (idleTime > config.features.idleThreshold) {
+                    const idlePenalty = config.features.idlePenaltyAmount;
+                    reward += idlePenalty;  // idlePenaltyAmount is already negative
+                    rewardBreakdown.push(`idle:${idlePenalty.toFixed(1)}`);
+                }
+            }
         }
 
         // === 11. LOGGING (Occasional debug output) ===
         if (Math.random() < 0.02) { // 2% chance to log
-            console.log(`[ML REWARD] ${bot.agentName}: ${reward.toFixed(2)} (${rewardBreakdown.join(', ')})`);
+            const cumulativeStr = bot.mlCumulativeReward !== undefined ? ` | Cumulative: ${bot.mlCumulativeReward.toFixed(2)}` : '';
+            console.log(`[ML REWARD] ${bot.agentName}: ${reward.toFixed(2)}${cumulativeStr} (${rewardBreakdown.join(', ')})`);
         }
 
         // Store reward breakdown history for dashboard (keep last 10)

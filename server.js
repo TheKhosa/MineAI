@@ -35,6 +35,7 @@ const { AgentAI, formatPos } = require('./agent_ai');
 const { VillageKnowledge } = require('./village_knowledge');
 const { SubagentManager } = require('./subagents');
 const { PluginSensorClient } = require('./plugin_sensor_client');
+const { AgentActionChat } = require('./agent_action_chat');
 const config = require('./config');
 const ActionSpace = require('./ml_action_space');
 const StateEncoder = require('./ml_state_encoder');
@@ -56,6 +57,9 @@ let chatLLM = null;
 let downloadManager = null;
 let chatManager = null;
 
+// UUID Validation System
+const uuidValidator = require('./uuid_validator');
+
 // Personality System
 const { getPersonalitySystem } = require('./agent_personality_system');
 const { getMLPersonality } = require('./ml_personality');
@@ -67,6 +71,10 @@ let dashboard = null;
 if (config.dashboard.enabled) {
     dashboard = require('./dashboard');
 }
+
+// GraphQL Visualization Server
+const { createGraphQLServer } = require('./viz_graphql_server');
+let graphqlServer = null;
 
 // Worker Pool (conditional on threading enabled)
 let WorkerPoolManager = null;
@@ -561,26 +569,23 @@ function getNextUUID() {
 /**
  * Get player name from UUID using Mojang session server
  * Returns null if UUID doesn't exist (404) - allows fallback to next UUID
+ * Now integrated with Supabase validation system
  */
 async function getPlayerNameFromUUID(uuid) {
-    const url = `https://sessionserver.mojang.com/session/minecraft/profile/${uuid}`;
+    // Use the new UUID validator which handles:
+    // 1. Checking Supabase cache (valid UUIDs)
+    // 2. Checking invalidUUID.txt (invalid UUIDs)
+    // 3. Querying Mojang API if not cached
+    // 4. Storing results in Supabase (valid) or invalidUUID.txt (invalid)
+    const result = await uuidValidator.validateUUID(uuid);
 
-    try {
-        const response = await axios.get(url, { timeout: 5000 });
-        if (response.data && response.data.name) {
-            const playerName = response.data.name;
-            PLAYER_NAME_CACHE.set(uuid, playerName);
-            return playerName;
-        }
-        return null;
-    } catch (error) {
-        if (error.response && error.response.status === 404) {
-            // UUID doesn't exist - return null to try next one
-            return null;
-        }
-        console.error(`[UUID] Error fetching player name for ${uuid}: ${error.message}`);
-        return null;
+    if (result.valid) {
+        // Add to local cache
+        PLAYER_NAME_CACHE.set(uuid, result.playerName);
+        return result.playerName;
     }
+
+    return null;
 }
 
 /**
@@ -909,6 +914,7 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
                 // Initialize systems
                 bot.rewards = new AgentRewardTracker(agentName);
                 bot.ai = new AgentAI(agentName, agentType);
+                bot.actionChat = new AgentActionChat(agentName, agentType);
                 bot.stuckDetector = new StuckDetector(bot);
                 bot.villageKnowledge = villageKnowledge;
 
@@ -1030,6 +1036,35 @@ function createAgent(agentType, serverConfig, parentName = null, generation = 1,
 
                         // Connect after setting up event handlers
                         bot.pluginSensorClient.connect();
+                    }
+
+                    // Execute join commands (e.g., /server survival)
+                    if (config.agents.joinCommands && config.agents.joinCommands.length > 0) {
+                        console.log(`[JOIN COMMANDS] ${bot.agentName} will execute ${config.agents.joinCommands.length} join command(s) in 2 seconds...`);
+
+                        // Execute commands sequentially with delay
+                        const executeCommands = async () => {
+                            // Wait 2 seconds after spawn before sending commands
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+
+                            for (const cmd of config.agents.joinCommands) {
+                                try {
+                                    console.log(`[JOIN COMMANDS] ${bot.agentName} executing: ${cmd}`);
+                                    bot.chat(cmd);
+
+                                    // Wait between commands if there are multiple
+                                    if (config.agents.joinCommandDelay && config.agents.joinCommands.length > 1) {
+                                        await new Promise(resolve => setTimeout(resolve, config.agents.joinCommandDelay));
+                                    }
+                                } catch (error) {
+                                    console.error(`[JOIN COMMANDS] ${bot.agentName} failed to execute "${cmd}": ${error.message}`);
+                                }
+                            }
+                        };
+
+                        executeCommands().catch(err => {
+                            console.error(`[JOIN COMMANDS] ${bot.agentName} error: ${err.message}`);
+                        });
                     }
 
                     // Setup event handlers (death, health, etc.)
@@ -1189,7 +1224,15 @@ function setupAgentEvents(bot) {
                         }
                     }
 
-                    // Build enriched speaker profile
+                    // Build enriched speaker profile with action context
+                    const recentActions = bot.actionChat ? bot.actionChat.recentActions.slice(-5).map(a => ({
+                        name: a.name,
+                        success: a.success,
+                        timeAgo: Math.floor((Date.now() - a.timestamp) / 1000)
+                    })) : [];
+
+                    const currentActivity = bot.actionChat ? bot.actionChat.determineActivityPattern() : 'working';
+
                     const enrichedSpeaker = {
                         name: bot.agentName,
                         type: bot.agentType,
@@ -1205,6 +1248,8 @@ function setupAgentEvents(bot) {
                         generation: bot.generation || 1,
                         thoughtProcess: bot.lastThought || 'Exploring the world...',
                         lastThought: bot.lastThought,
+                        recentActions: recentActions,
+                        currentActivity: currentActivity,
                         conversationHistory: conversationHistory,
                         relationshipWithListener: relationshipData
                     };
@@ -1339,96 +1384,158 @@ async function startAgentBehavior(bot) {
         }
     }, config.agents.rewardUpdateInterval);
 
+    // DEATH THRESHOLD CHECK - Kill agents who drop below -20 cumulative reward
+    if (config.features.enableRewardThresholdDeath) {
+        setInterval(() => {
+            if (bot.health > 0 && bot.mlCumulativeReward !== undefined) {
+                const cumulativeReward = bot.mlCumulativeReward;
+                const threshold = config.features.deathRewardThreshold;
+
+                if (cumulativeReward < threshold) {
+                    console.warn(`[DEATH THRESHOLD] ${bot.agentName} cumulative reward (${cumulativeReward.toFixed(2)}) dropped below ${threshold}`);
+                    console.warn(`[DEATH THRESHOLD] ${bot.agentName} is being terminated - not learning effectively`);
+
+                    // Record death reason for analytics
+                    if (bot.rewards) {
+                        bot.rewards.addReward(0, `TERMINATED - cumulative reward: ${cumulativeReward.toFixed(2)}`);
+                    }
+
+                    // Trigger death (will spawn new generation)
+                    bot.emit('health');  // Update health display
+                    bot.health = 0;  // Set health to 0 to trigger death
+
+                    // Force death event if needed
+                    setTimeout(() => {
+                        if (bot.health === 0 && bot._client) {
+                            bot._client.end('Reward threshold death');
+                        }
+                    }, 100);
+                }
+            }
+        }, config.features.checkDeathInterval);
+    }
+
     // ML Decision-Making Loop - Every 3 seconds, let ML choose an action
     console.log(`[ML LOOP CHECK] ${bot.agentName} - ML_ENABLED: ${ML_ENABLED}, mlTrainer: ${!!mlTrainer}, actionSpace: ${!!bot.actionSpace}`);
     if (ML_ENABLED && mlTrainer && bot.actionSpace) {
         console.log(`[ML LOOP] Starting ML decision loop for ${bot.agentName}`);
+
+        // Initialize ML agent in trainer (this sets up brain, episode buffer, etc.)
+        mlTrainer.initializeAgent(bot).then(() => {
+            console.log(`[ML INIT] ${bot.agentName} ML agent initialized successfully`);
+        }).catch(err => {
+            console.error(`[ML INIT] ${bot.agentName} failed to initialize ML: ${err.message}`);
+        });
+
         setInterval(async () => {
             try {
-                console.log(`[ML LOOP] Tick for ${bot.agentName} - Health: ${bot.health}, Has entity: ${!!bot.entity}, Has position: ${!!bot.entity?.position}`);
                 if (bot.health > 0 && bot.entity && bot.entity.position) {
-                    // Encode current state
-                    const state = bot.stateEncoder.encodeState(bot);
+                    // Use mlTrainer.agentStep() - the CORRECT entry point for ML decision loop
+                    // This method handles:
+                    // - State encoding
+                    // - Hierarchical brain action selection (SQLite + Shared + Personal)
+                    // - Action execution via ActionSpace
+                    // - Experience recording for training
+                    // - Periodic training updates
+                    const stepResult = await mlTrainer.agentStep(bot);
 
-                    // Get ML action from trainer
-                    const actionResult = mlTrainer.selectActionForAgent(bot.agentName, bot.agentType, state);
-                    const actionId = actionResult.action;
+                    if (stepResult) {
+                        const { action, actionName, value, success, wasExploring } = stepResult;
 
-                    // Apply personality bias if available
-                    let finalActionId = actionId;
-                    let thoughtProcess = 'Deciding next action...';
-
-                    if (bot.personality && mlPersonality) {
-                        const actions = [{ id: actionId, type: bot.actionSpace.getActionName(actionId), probability: 1.0 }];
-                        const biasedActions = mlPersonality.getPersonalityBiasedActions(bot.personality, actions);
-                        if (biasedActions.length > 0) {
-                            finalActionId = biasedActions[0].id;
-                            thoughtProcess = `My personality drives me to ${bot.actionSpace.getActionName(finalActionId)}`;
+                        // Update bot's thought process
+                        if (wasExploring) {
+                            bot.lastThought = `Exploring new strategies... trying ${actionName}`;
+                        } else {
+                            bot.lastThought = `My training suggests ${actionName} (value: ${(value || 0).toFixed(2)})`;
                         }
-                    }
 
-                    // Execute the action
-                    const actionName = bot.actionSpace.getActionName(finalActionId);
-                    console.log(`[ML ACTION] ${bot.agentName} attempting action ${finalActionId}: ${actionName}`);
+                        bot.lastAction = actionName;
 
-                    // Update bot's thought process and current action
-                    bot.lastAction = actionName;
-                    bot.lastThought = thoughtProcess;
+                        // Record action for enriched chat system
+                        if (bot.actionChat && success) {
+                            bot.actionChat.recordAction(action, actionName, success, {
+                                position: bot.entity?.position,
+                                health: bot.health,
+                                inventory: bot.inventory?.items().length || 0
+                            });
+                        }
 
-                    const success = await bot.actionSpace.executeAction(finalActionId, bot);
-                    console.log(`[ML ACTION] ${bot.agentName} action result: ${success ? 'SUCCESS' : 'FAILED'}`);
+                        // Update last action time for idle detection
+                        if (success) {
+                            bot.lastActionTime = Date.now();
 
-                    // Update last action time for idle detection (IF YOU AIN'T LEARNING, YOU DYING)
-                    if (success) {
-                        bot.lastActionTime = Date.now();
-                    }
+                            // Record experience for personality evolution
+                            if (mlPersonality && bot.personality) {
+                                const activityMap = {
+                                    'mine': 'mining',
+                                    'chop': 'gathering',
+                                    'dig': 'mining',
+                                    'attack': 'fighting',
+                                    'craft': 'crafting',
+                                    'fish': 'fishing'
+                                };
 
-                    // Give reward for action
-                    if (success) {
-                        const actionReward = REWARD_CONFIG.MOVEMENT;
-                        bot.rewards.addReward(actionReward, `action: ${actionName}`);
-                        console.log(`[ML REWARD] ${bot.agentName} earned ${actionReward.toFixed(2)} for ${actionName}`);
-                        bot.lastThought = `Successfully completed ${actionName}! Reward: +${actionReward.toFixed(2)}`;
-
-                        // Record experience for ML learning
-                        // NOTE: Experience tracking is already handled by mlTrainer.agentStep()
-                        // No need to manually store experiences here
-
-                        // Record experience for personality evolution
-                        if (mlPersonality && bot.personality) {
-                            const activityMap = {
-                                'mine': 'mining',
-                                'chop': 'gathering',
-                                'dig': 'mining',
-                                'attack': 'fighting',
-                                'craft': 'crafting',
-                                'fish': 'fishing'
-                            };
-
-                            for (const [key, activity] of Object.entries(activityMap)) {
-                                if (actionName.includes(key)) {
-                                    mlPersonality.recordExperience(
-                                        bot.uuid || bot.agentName,
-                                        bot.personality,
-                                        'activities',
-                                        activity,
-                                        true,
-                                        0.02
-                                    );
-                                    break;
+                                for (const [key, activity] of Object.entries(activityMap)) {
+                                    if (actionName.includes(key)) {
+                                        mlPersonality.recordExperience(
+                                            bot.uuid || bot.agentName,
+                                            bot.personality,
+                                            'activities',
+                                            activity,
+                                            true,
+                                            0.02
+                                        );
+                                        break;
+                                    }
                                 }
                             }
+                        } else {
+                            bot.lastThought = `${actionName} didn't work out. Learning from this...`;
                         }
-                    } else {
-                        bot.lastThought = `Failed to execute ${actionName}. Trying something else...`;
                     }
                 }
             } catch (error) {
-                // Silently handle ML errors - agent continues with basic behavior
+                // Handle ML errors gracefully
                 bot.lastThought = `Error during decision making: ${error.message}`;
                 console.error(`[ML] ${bot.agentName} decision error: ${error.message}`);
+                console.error(error.stack);
             }
         }, 3000); // Every 3 seconds
+    }
+
+    // Action-Based Chat Loop - Every 30 seconds, agents may spontaneously chat about what they're doing
+    if (bot.actionChat && chatManager) {
+        setInterval(() => {
+            try {
+                if (bot.health > 0 && bot.entity) {
+                    // 20% chance to share what they're doing
+                    if (Math.random() < 0.20) {
+                        const message = bot.actionChat.generateSpontaneousMessage(bot);
+                        if (message) {
+                            console.log(`[ACTION CHAT] ${bot.agentName}: ${message}`);
+                            chatManager.queueMessage(bot, message, {
+                                channel: 'global',
+                                priority: 'low'
+                            });
+                        }
+                    }
+
+                    // 10% chance to start a conversation
+                    if (Math.random() < 0.10) {
+                        const starter = bot.actionChat.generateConversationStarter(bot);
+                        if (starter) {
+                            console.log(`[ACTION CHAT] ${bot.agentName}: ${starter}`);
+                            chatManager.queueMessage(bot, starter, {
+                                channel: 'global',
+                                priority: 'normal'
+                            });
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`[ACTION CHAT] ${bot.agentName} chat error: ${error.message}`);
+            }
+        }, 30000); // Every 30 seconds
     }
 }
 
@@ -1470,6 +1577,9 @@ function spawnOffspringFromDead(parentInfo) {
 
 const activeAgents = new Map();
 const agentPopulation = new Map();
+
+// Expose activeAgents globally for ML trainer's calculateReward() method
+global.activeAgents = activeAgents;
 
 const lineageTracker = {
     agents: new Map(), // agentType -> [{name, generation, parentName, parentUUID}]
@@ -1740,6 +1850,15 @@ async function initializeSystems() {
     mlPersonality = getMLPersonality();
     console.log('[PERSONALITY] Personality system active');
     console.log('[PERSONALITY] ML-Personality integration ready');
+    console.log('='.repeat(70) + '\n');
+
+    // Initialize UUID Validation System
+    console.log('\n' + '='.repeat(70));
+    console.log('[UUID VALIDATOR] Initializing UUID Validation System...');
+    console.log('[UUID VALIDATOR] Supabase: https://uokpjmevowrbjaybepoq.supabase.co');
+    await uuidValidator.initialize();
+    const uuidStats = uuidValidator.getStats();
+    console.log(`[UUID VALIDATOR] Cache loaded: ${uuidStats.validUUIDs} valid, ${uuidStats.invalidUUIDs} invalid`);
     console.log('='.repeat(70) + '\n');
 
     // Initialize Worker Pool (if threading enabled)
@@ -2262,6 +2381,34 @@ function startBrainServer() {
 
         // Start Brain API server
         startBrainServer();
+
+        // Start GraphQL Visualization Server
+        if (config.visualization.enabled) {
+            try {
+                console.log('\n' + '='.repeat(70));
+                console.log('[VIZ GRAPHQL] Initializing GraphQL Visualization Server...');
+                console.log('='.repeat(70));
+
+                graphqlServer = await createGraphQLServer(config.visualization.port, {
+                    activeAgents,
+                    memorySystem,
+                    mlTrainer,
+                    actionSpace: new ActionSpace(),
+                    fitnessTracker
+                });
+
+                console.log('[VIZ GRAPHQL] ✅ Visualization server ready!');
+                console.log(`[VIZ GRAPHQL] Dashboard: http://localhost:${graphqlServer.dashboardPort}/`);
+                console.log(`[VIZ GRAPHQL] GraphQL API: http://localhost:${config.visualization.port}/graphql`);
+                console.log(`[VIZ GRAPHQL] Poll Interval: ${config.visualization.pollInterval}ms`);
+                console.log('='.repeat(70) + '\n');
+            } catch (error) {
+                console.error('[VIZ GRAPHQL] Failed to start:', error.message);
+                console.log('[VIZ GRAPHQL] Continuing without visualization server...\n');
+            }
+        } else {
+            console.log('[VIZ GRAPHQL] Visualization server disabled in config\n');
+        }
 
         console.log('\n' + '='.repeat(70));
         console.log('[STARTUP] All systems initialized - starting village');

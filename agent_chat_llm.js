@@ -36,6 +36,9 @@
 
 const fs = require('fs');
 const path = require('path');
+const config = require('./config');
+const { DynamicPromptBuilder } = require('./agent_dynamic_prompts');
+const { getMemorySystem } = require('./agent_memory_system');
 
 class AgentChatLLM {
     constructor(backend = 'mock') {
@@ -44,6 +47,10 @@ class AgentChatLLM {
         this.initialized = false;
         this.conversationHistory = [];
         this.maxHistoryLength = 50;
+
+        // Dynamic prompt system
+        this.promptBuilder = new DynamicPromptBuilder();
+        this.memorySystem = getMemorySystem();
 
         // Request queue system for thread-safe model access
         this.requestQueue = [];
@@ -87,6 +94,9 @@ class AgentChatLLM {
                     case 'ollama':
                         await this.initializeOllama();
                         break;
+                    case 'gemini':
+                        await this.initializeGemini();
+                        break;
                     case 'python':
                         await this.initializePython();
                         break;
@@ -99,6 +109,9 @@ class AgentChatLLM {
                     default:
                         throw new Error(`Unknown backend: ${this.backend}`);
                 }
+
+                // NEW: Seed prompt library on first initialization
+                await this.seedPromptLibrary();
 
                 this.initialized = true;
                 this.initializationInProgress = false;
@@ -375,8 +388,30 @@ class AgentChatLLM {
             throw new Error('Ollama server not running on localhost:11434');
         }
 
-        this.model = { type: 'ollama', modelName: 'granite' };
-        console.log('[CHAT LLM] Ollama backend ready');
+        this.model = { type: 'ollama', modelName: config.llm.ollama.model };
+        console.log(`[CHAT LLM] Ollama backend ready (model: ${config.llm.ollama.model})`);
+    }
+
+    /**
+     * Initialize Google Gemini API backend
+     */
+    async initializeGemini() {
+        // Validate API key
+        if (!config.llm.gemini.apiKey) {
+            throw new Error('Gemini API key not configured');
+        }
+
+        this.model = {
+            type: 'gemini',
+            modelName: config.llm.gemini.model,
+            apiKey: config.llm.gemini.apiKey,
+            endpoint: config.llm.gemini.endpoint
+        };
+
+        this.config.maxTokens = config.llm.gemini.maxTokens || 50;
+        this.config.temperature = config.llm.gemini.temperature || 0.8;
+
+        console.log(`[CHAT LLM] Gemini backend ready (model: ${config.llm.gemini.model})`);
     }
 
     /**
@@ -514,10 +549,21 @@ class AgentChatLLM {
 
         // Enqueue the request for processing
         return this.enqueueRequest(async () => {
-            // Build prompt with agent context
-            const prompt = this.buildPrompt(speaker, listener, context);
+            const startTime = Date.now();
 
             try {
+                // NEW: Store context snapshot before generating response
+                const contextSnapshotId = await this.storeContextSnapshot(speaker, listener);
+
+                // NEW: Use dynamic prompt builder for rich context
+                const conversationType = this.mapContextToConversationType(context);
+                const { prompt, templateName } = await this.promptBuilder.buildConversationPrompt(
+                    speaker,
+                    listener,
+                    conversationType
+                );
+
+                // Generate response with appropriate backend
                 let response;
                 switch (this.backend) {
                     case 'transformers':
@@ -525,6 +571,9 @@ class AgentChatLLM {
                         break;
                     case 'ollama':
                         response = await this.generateWithOllama(prompt);
+                        break;
+                    case 'gemini':
+                        response = await this.generateWithGemini(prompt);
                         break;
                     case 'python':
                         response = await this.generateWithPython(prompt);
@@ -537,7 +586,12 @@ class AgentChatLLM {
                         break;
                 }
 
-                // Store in conversation history
+                const responseTime = Date.now() - startTime;
+
+                // NEW: Store chat message in database
+                await this.storeChatMessage(speaker, listener, response, context, contextSnapshotId, templateName, responseTime);
+
+                // Store in conversation history (legacy)
                 this.addToHistory(speaker.name, listener.name, response, context);
 
                 return response;
@@ -546,6 +600,138 @@ class AgentChatLLM {
                 return this.generateWithMock(speaker, listener, context);
             }
         });
+    }
+
+    /**
+     * Map legacy context types to new conversation types
+     */
+    mapContextToConversationType(context) {
+        const mapping = {
+            'nearby': 'greeting',
+            'introduction': 'greeting',
+            'player_conversation': 'casual_chat',
+            'trading': 'casual_chat',
+            'exploring': 'action_comment',
+            'low_health': 'emotion_express',
+            'danger': 'emotion_express',
+            'farewell': 'casual_chat'
+        };
+
+        return mapping[context] || 'casual_chat';
+    }
+
+    /**
+     * Store context snapshot to database
+     */
+    async storeContextSnapshot(speaker, listener) {
+        try {
+            const agentData = {
+                uuid: speaker.uuid || '',
+                username: speaker.name || speaker.username || 'Unknown',
+                bot: speaker.bot,
+                position: speaker.bot?.entity?.position,
+                biome: speaker.currentBiome || 'unknown',
+                dimension: speaker.dimension || 'overworld',
+                timeOfDay: this.getTimeOfDay(speaker.bot),
+                weather: speaker.weather || 'clear',
+                health: speaker.bot?.health || speaker.health || 20,
+                food: speaker.bot?.food || speaker.food || 20,
+                xpLevel: speaker.bot?.experience?.level || 0,
+                currentAction: speaker.lastActionTaken || speaker.currentActivity || 'idle',
+                currentGoal: speaker.currentGoal || 'explore',
+                currentEmotion: speaker.currentEmotion || 'neutral',
+                inventory: speaker.inventory || [],
+                nearbyEntities: speaker.nearbyEntities || [],
+                nearbyBlocks: speaker.nearbyBlocks || [],
+                visibleBlocksCount: speaker.sensorData?.blockCount || 0,
+                nearbyAgents: listener ? [listener.name] : [],
+                sensorData: speaker.sensorData || {},
+                moodles: speaker.moodleSystem?.getCurrentMoodles() || [],
+                skills: speaker.subskills || speaker.skills || {},
+                recentActions: speaker.actionHistory?.slice(-5) || [],
+                personalityTraits: speaker.personality?.traits || [],
+                relationshipContext: {}
+            };
+
+            return await this.memorySystem.storeContextSnapshot(agentData);
+        } catch (error) {
+            console.error('[CHAT LLM] Failed to store context snapshot:', error.message);
+            return null;
+        }
+    }
+
+    /**
+     * Store chat message to database
+     */
+    async storeChatMessage(speaker, listener, message, context, contextSnapshotId, templateName, responseTime) {
+        try {
+            const speakerPos = speaker.bot?.entity?.position;
+            const listenerPos = listener?.bot?.entity?.position;
+            let distance = null;
+
+            if (speakerPos && listenerPos) {
+                distance = Math.round(speakerPos.distanceTo(listenerPos));
+            }
+
+            const messageData = {
+                speakerUUID: speaker.uuid || '',
+                speakerName: speaker.name || speaker.username || 'Unknown',
+                listenerUUID: listener?.uuid || null,
+                listenerName: listener?.name || listener?.username || null,
+                message: message,
+                messageType: context,
+                emotion: speaker.currentEmotion || 'neutral',
+                currentAction: speaker.lastActionTaken || 'idle',
+                locationX: speakerPos?.x || 0,
+                locationY: speakerPos?.y || 64,
+                locationZ: speakerPos?.z || 0,
+                health: speaker.bot?.health || speaker.health || 20,
+                food: speaker.bot?.food || speaker.food || 20,
+                distanceToListener: distance,
+                contextSnapshotId: contextSnapshotId,
+                promptId: null, // Could link to prompt_library in future
+                modelBackend: this.backend,
+                responseTimeMs: responseTime
+            };
+
+            await this.memorySystem.storeChatMessage(messageData);
+
+            // Increment prompt usage if template name provided
+            if (templateName) {
+                await this.memorySystem.incrementPromptUsage(templateName);
+            }
+        } catch (error) {
+            console.error('[CHAT LLM] Failed to store chat message:', error.message);
+        }
+    }
+
+    /**
+     * Get time of day helper
+     */
+    getTimeOfDay(bot) {
+        if (!bot?.time?.timeOfDay) return 'day';
+        const time = bot.time.timeOfDay;
+        if (time < 6000) return 'morning';
+        if (time < 12000) return 'day';
+        if (time < 18000) return 'evening';
+        return 'night';
+    }
+
+    /**
+     * Seed the prompt library with default templates
+     */
+    async seedPromptLibrary() {
+        try {
+            // Initialize memory system if not already done
+            if (!this.memorySystem.initialized) {
+                await this.memorySystem.initialize();
+            }
+
+            // Use prompt builder to seed templates
+            await this.promptBuilder.seedPromptLibrary();
+        } catch (error) {
+            console.error('[CHAT LLM] Failed to seed prompt library:', error.message);
+        }
     }
 
     /**
@@ -741,6 +927,18 @@ class AgentChatLLM {
             agentProfile += `\nCarrying: ${items}`;
         }
 
+        // Current activity and recent actions
+        if (speaker.currentActivity) {
+            agentProfile += `\nCurrent Activity: ${speaker.currentActivity}`;
+        }
+        if (speaker.recentActions && speaker.recentActions.length > 0) {
+            agentProfile += `\n\nRecent Actions:`;
+            speaker.recentActions.forEach(action => {
+                const status = action.success ? '✓' : '✗';
+                agentProfile += `\n  ${status} ${action.name} (${action.timeAgo}s ago)`;
+            });
+        }
+
         // Current tasks/goals
         if (speaker.currentGoal) {
             agentProfile += `\nCurrent Goal: ${speaker.currentGoal}`;
@@ -924,21 +1122,71 @@ I'm going to say something creative and natural to ${listener.name}:<|im_end|>
         const http = require('http');
 
         return new Promise((resolve, reject) => {
+            // Extract key context for Minecraft-relevant responses
+            const lines = prompt.split('\n').filter(line => line.trim());
+
+            // Extract essential Minecraft facts
+            const nameMatch = lines.find(l => l.includes('You are'));
+            let agentName = 'Agent';
+            let agentRole = 'EXPLORING';
+            if (nameMatch) {
+                const match = nameMatch.match(/You are (\w+), a Minecraft agent with the role of (\w+)/);
+                if (match) {
+                    agentName = match[1];
+                    agentRole = match[2];
+                }
+            }
+
+            // Extract current action and goal
+            let currentAction = 'idle';
+            let currentGoal = 'explore';
+            const actionLine = lines.find(l => l.includes('Current Action:'));
+            const goalLine = lines.find(l => l.includes('Current Goal:'));
+            if (actionLine) {
+                const match = actionLine.match(/Current Action: (.+)/);
+                if (match) currentAction = match[1].trim();
+            }
+            if (goalLine) {
+                const match = goalLine.match(/Current Goal: (.+)/);
+                if (match) currentGoal = match[1].trim();
+            }
+
+            // Extract inventory
+            let inventory = 'empty';
+            const invLine = lines.find(l => l.includes('inventory') || l.includes('Carrying:'));
+            if (invLine && invLine.includes(':')) {
+                inventory = invLine.split(':')[1].trim();
+            }
+
+            // Build ultra-simple prompt with context already embedded in the template
+            const systemMsg = `You are ${agentName}, a ${agentRole} in Minecraft. Say one short sentence (10 words max) about what you're doing.`;
+            const userMsg = `Currently: ${currentAction}. Goal: ${currentGoal}. What do you say?`;
+
+            // Use /api/chat with messages array format (per Ollama API docs)
             const data = JSON.stringify({
                 model: this.model.modelName,
-                prompt: prompt,
+                messages: [
+                    {
+                        role: 'system',
+                        content: systemMsg
+                    },
+                    {
+                        role: 'user',
+                        content: userMsg
+                    }
+                ],
                 stream: false,
                 options: {
-                    temperature: this.config.temperature,
-                    top_p: this.config.topP,
-                    num_predict: this.config.maxTokens
+                    temperature: 0.5,  // Very low temperature for consistent, focused responses
+                    top_p: 0.9,
+                    num_predict: 15  // Limit to 15 tokens
                 }
             });
 
             const options = {
                 hostname: 'localhost',
                 port: 11434,
-                path: '/api/generate',
+                path: '/api/chat',  // Use /api/chat endpoint per Ollama docs
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -952,7 +1200,9 @@ I'm going to say something creative and natural to ${listener.name}:<|im_end|>
                 res.on('end', () => {
                     try {
                         const json = JSON.parse(responseData);
-                        resolve(json.response || '');
+                        // /api/chat returns: { message: { role: "assistant", content: "response" } }
+                        const response = json.message?.content || '';
+                        resolve(response);
                     } catch (e) {
                         reject(e);
                     }
@@ -964,6 +1214,118 @@ I'm going to say something creative and natural to ${listener.name}:<|im_end|>
                 req.destroy();
                 reject(new Error('Ollama request timeout'));
             });
+            req.write(data);
+            req.end();
+        });
+    }
+
+    /**
+     * Generate with Google Gemini API
+     */
+    async generateWithGemini(prompt) {
+        const https = require('https');
+
+        return new Promise((resolve, reject) => {
+            // Extract context like we do for Ollama
+            const lines = prompt.split('\n').filter(line => line.trim());
+
+            const nameMatch = lines.find(l => l.includes('You are'));
+            let agentName = 'Agent';
+            let agentRole = 'EXPLORING';
+            if (nameMatch) {
+                const match = nameMatch.match(/You are (\w+), a Minecraft agent with the role of (\w+)/);
+                if (match) {
+                    agentName = match[1];
+                    agentRole = match[2];
+                }
+            }
+
+            let currentAction = 'idle';
+            let currentGoal = 'explore';
+            const actionLine = lines.find(l => l.includes('Current Action:'));
+            const goalLine = lines.find(l => l.includes('Current Goal:'));
+            if (actionLine) {
+                const match = actionLine.match(/Current Action: (.+)/);
+                if (match) currentAction = match[1].trim();
+            }
+            if (goalLine) {
+                const match = goalLine.match(/Current Goal: (.+)/);
+                if (match) currentGoal = match[1].trim();
+            }
+
+            // Build focused prompt for Gemini
+            const userMsg = `You are ${agentName}, a ${agentRole} in Minecraft. You are currently ${currentAction}. Your goal is ${currentGoal}. Say one very short sentence (10 words max) about what you're doing right now.`;
+
+            // Gemini API request body
+            const requestBody = {
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [
+                            {
+                                text: userMsg
+                            }
+                        ]
+                    }
+                ]
+            };
+
+            const data = JSON.stringify(requestBody);
+            const url = `${this.model.endpoint}/publishers/google/models/${this.model.modelName}:streamGenerateContent?key=${this.model.apiKey}`;
+            const urlObj = new URL(url);
+
+            const options = {
+                hostname: urlObj.hostname,
+                port: 443,
+                path: urlObj.pathname + urlObj.search,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': data.length
+                }
+            };
+
+            const req = https.request(options, (res) => {
+                let responseData = '';
+                res.on('data', (chunk) => responseData += chunk);
+                res.on('end', () => {
+                    try {
+                        // The API returns JSON (not streaming despite the endpoint name)
+                        const json = JSON.parse(responseData);
+
+                        // Extract text from response
+                        if (json.candidates && json.candidates[0]?.content?.parts) {
+                            let fullText = '';
+                            for (const part of json.candidates[0].content.parts) {
+                                if (part.text) {
+                                    fullText += part.text;
+                                }
+                            }
+                            resolve(fullText.trim() || 'Working on my task.');
+                        } else if (json.error) {
+                            console.error('[GEMINI] API error:', json.error.message);
+                            resolve('Working on my task.');
+                        } else {
+                            console.error('[GEMINI] Unexpected response format');
+                            resolve('Working on my task.');
+                        }
+                    } catch (e) {
+                        console.error('[GEMINI] Parse error:', e.message, '- Response:', responseData.substring(0, 200));
+                        resolve('Working on my task.');
+                    }
+                });
+            });
+
+            req.on('error', (error) => {
+                console.error('[GEMINI] Request error:', error.message);
+                resolve('Working on my task.');
+            });
+
+            req.setTimeout(10000, () => {
+                req.destroy();
+                resolve('Working on my task.');
+            });
+
             req.write(data);
             req.end();
         });
